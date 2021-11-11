@@ -22,6 +22,7 @@ import os
 import random
 import time
 from typing import Mapping, Optional, Text
+import json
 
 from absl import app
 from absl import flags
@@ -244,7 +245,8 @@ def _create_examples(
     test_mode,
 ):
   """Creates TF example for a single dataset."""
-
+  errfile = f'{filename}_errors.json' # debug
+  _print(f'conversion errors will be logged to {example_dir}/{errfile}')
   filename = f'{filename}.tfrecord'
   interaction_path = os.path.join(interaction_dir, filename)
   example_path = os.path.join(example_dir, filename)
@@ -260,11 +262,13 @@ def _create_examples(
       strip_column_names=False,
       add_aggregation_candidates=False,
   )
+
   converter = tf_example_utils.ToClassifierTensorflowExample(config)
 
   examples = []
   num_questions = 0
   num_conversion_errors = 0
+  err_bkdn = {} #debug
   for interaction in prediction_utils.iterate_interactions(interaction_path):
     number_annotation_utils.add_numeric_values(interaction)
     for i in range(len(interaction.questions)):
@@ -273,11 +277,18 @@ def _create_examples(
       try:
         examples.append(converter.convert(interaction, i))
       except ValueError as e:
+        e_str = str(e)
+        if e_str not in err_bkdn: #debug
+          err_bkdn[e_str] = []
+        err_bkdn[e_str].append(interaction.id) #debug
         num_conversion_errors += 1
         logging.info("Can't convert interaction: %s error: %s", interaction.id,
                      e)
     if test_mode and len(examples) >= 100:
       break
+  #debug
+  with open(os.path.join(example_dir,errfile),'w') as f:
+    json.dump(err_bkdn,f)
 
   _print(f'Processed: {filename}')
   _print(f'Num questions processed: {num_questions}')
@@ -857,10 +868,13 @@ def main(argv):
     # Retrieval interactions are model dependant and are created in advance.
     if task != tasks.Task.NQ_RETRIEVAL:
       _print('Creating interactions ...')
+      #import time;time.sleep(5)
       token_selector = _get_token_selector()
       task_utils.create_interactions(task, FLAGS.input_dir, output_dir,
                                      token_selector)
     _print('Creating TF examples ...')
+    #print('temporarily skipped')
+    #import pdb;pdb.set_trace()
     _create_all_examples(
         task,
         FLAGS.bert_vocab_file,

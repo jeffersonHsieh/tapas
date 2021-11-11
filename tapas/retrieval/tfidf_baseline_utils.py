@@ -45,15 +45,46 @@ def iterate_interaction_tables(
 
 def _iterate_table_texts(table,
                          title_multiplicator):
+  # repeat title and header multiple times
   for _ in range(title_multiplicator):
     if table.document_title:
       yield table.document_title
     for column in table.columns:
       yield column.text
+  # ---------- debug starts ----------
+  # comment out to see retrieval performance no body text
   for row in table.rows:
     for cell in row.cells:
       yield cell.text
+  # ---------- debug ends ----------
 
+# --------------- custom starts -----------------
+def _iterate_weighted_table_texts(
+  table,weight_title,weight_header,weight_content):
+    # repeat title and header multiple times
+  for _ in range(weight_title):
+    if table.document_title:
+      yield table.document_title
+  
+  for _ in range(weight_header):
+    for column in table.columns:
+      yield column.text
+  for _ in range(weight_content):
+    for row in table.rows:
+      for cell in row.cells:
+        yield cell.text
+
+def _iterate_custom_tokenized_table_texts(table,
+                                   title_multiplicator, 
+                                   weight_header,
+                                   weight_content
+                                   ):
+  for text in _iterate_weighted_table_texts(
+    table, title_multiplicator, 
+    weight_header, weight_content):
+    yield from _tokenize(text)
+
+# ---------------- custom ends -------------------
 
 def _iterate_tokenized_table_texts(table,
                                    title_multiplicator):
@@ -201,3 +232,21 @@ def create_bm25_index(
         list(_iterate_tokenized_table_texts(table, title_multiplicator)))
     table_ids.append(table.table_id)
   return BM25Index(corpus, table_ids)
+
+# --------------- custom starts -----------------
+def create_uneven_bm25_index(
+    tables,
+    title_multiplicator=1,
+    num_tables = None,
+    weight_header=1,
+    weight_content=1
+):
+  """Creates a new index."""
+  corpus = []
+  table_ids = []
+  for table in tqdm.tqdm(_remove_duplicates(tables), total=num_tables):
+    corpus.append(
+        list(_iterate_custom_tokenized_table_texts(table, title_multiplicator, weight_header,weight_content)))
+    table_ids.append(table.table_id)
+  return BM25Index(corpus, table_ids)
+# --------------- custom ends -----------------

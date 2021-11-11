@@ -135,6 +135,8 @@ def convert_to_float(value):
     return float(sanitized)
   except ValueError:
     # Avoid adding the sanitized value in the error message.
+    if any(letter.isdigit() for letter in sanitized):
+      raise ValueError("Contains digits, but Unable to convert value to float")
     raise ValueError("Unable to convert value to float")
 
 

@@ -461,6 +461,10 @@ def _evaluate_retrieval_e2e(
 
   num_errors_logged = 0
 
+  # -----debug------
+  # pred_output = []
+  # -----debug ends ------
+
   for candidates in interactions.values():
     logging.log_every_n(
         logging.INFO,
@@ -504,6 +508,21 @@ def _evaluate_retrieval_e2e(
 
       if _is_correct_table(best_result.interaction):
         num_correct_tables += 1
+      
+      # -----debug------
+      # out_results = []
+      # for res in results:
+      #   mets = _get_best_metrics(reference_answer_texts, res.answer)
+      #   out_results.append({
+      #     'qid':res.interaction.questions[0].id,
+      #     'table_correct':_is_correct_table(res.interaction),
+      #     'pred': res.answer, 
+      #     'pred_score': res.score,
+      #     'correct':mets['exact'],
+      #     'f1':mets['f1']})
+      
+      # pred_output.append(out_results)
+      # -----debug ends------
 
     metrics = _get_best_metrics(reference_answer_texts, best_answer_text)
     token_precisions.append(metrics["precision"])
@@ -537,6 +556,21 @@ def _evaluate_retrieval_e2e(
       logging.info("question: '%s' references: %s prediction: '%s'",
                    _get_question(candidates), reference_answer_texts,
                    best_answer_text)
+
+
+  # -----debug------
+  # import pdb;pdb.set_trace()
+  # split = 'test'
+  # outpath = os.path.join(os.path.dirname(
+  #   os.path.dirname(
+  #     os.path.abspath(vocab_file
+  #     )
+  #   )
+  # ),f'{split}_marked_reader_output.json')
+  # import json
+  # with open(outpath,'w') as f:
+  #   json.dump(pred_output,f)
+  # -----debug ends------
 
   precision = _mean(token_precisions)
   recall = _mean(token_recalls)

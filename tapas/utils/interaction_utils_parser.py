@@ -223,6 +223,7 @@ def _parse_question(
       question.answer.answer_texts.append(number_str)
 
   if not question.answer.answer_texts:
+    import pdb;pdb.set_trace()
     raise ValueError("No answer_texts provided")
 
   for field_name in clear_fields:

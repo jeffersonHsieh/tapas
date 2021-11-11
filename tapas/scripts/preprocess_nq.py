@@ -56,7 +56,7 @@ def to_interaction(
     yield new_interaction
 
 
-def process_line(line_split,):
+def process_line(line_split):
   """Parses json and yields result dictionary."""
   beam.metrics.Metrics.counter(_NS, "Lines").inc()
   line, split = line_split
@@ -122,7 +122,14 @@ def build_pipeline(
 
     lines = []
     for split, files in filenames.items():
-      for filename in files:
+    #--------------debug start-----------------
+      if split == preprocess_nq_utils.Split.train:
+        print(f"skipping file {files}")
+        import time;time.sleep(10)
+        continue
+
+      for filename in files: #truncate to 1 file
+    #--------------debug end-----------------
         lines.append(
             root | f"Read {filename}" >> beam.io.textio.ReadFromText(
                 filename,

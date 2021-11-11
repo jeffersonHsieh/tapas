@@ -109,6 +109,13 @@ message Table {
   // Heading of the table on the document.
   optional string context_heading = 9;
 
+  // Infobox marker -- MODIFICATION
+  optional bool is_infobox = 10;
+
+  // Section Title -- MODIFICATION
+  optional string section_title = 11;
+
+
   extensions 10000 to max;
 }
 
