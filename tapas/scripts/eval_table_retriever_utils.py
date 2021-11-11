@@ -54,13 +54,22 @@ class InnerProductNearestNeighbors:
       2D Array of inner product between each query and the nearest neighbors.
       2D Array of nearest neighbors index for each query.
     """
-    # <float>[num_queries, num_candidates]
+    # <float>[num_queries, num_candidates] 
+    # d_ij=distance btw query i and candidate j
     distances = np.matmul(queries, self._candidates.T)
     # <int>[num_queries, n_neighbors]
+      # partition along each row in (d_ij) 
+      # -- all candidates for query i; 
+      #self._n_neighbors:=k 
+      # argpartition(...,-k)[:,-k:] means put top-k on the right
+      # if you pass 'k', would put last-k on the left
+      # --> k-th closest (largest sim) to the right
+      # then get their indices from the right
     indices = np.argpartition(distances,
                               -self._n_neighbors)[:, -self._n_neighbors:]
     # This indices aren't sorted so we find the permutation to sort them.
     # <int>[num_queries, n_neighbors]
+    # sort descending (bc sort indices w negative distances)
     permutation = np.argsort(-np.take_along_axis(distances, indices, axis=-1))
     # <int>[num_queries, n_neighbors]
     sorted_indices = np.take_along_axis(indices, permutation, axis=-1)
@@ -167,6 +176,8 @@ def _get_precision_at_k(neighbors,
     correct_at_k = correct[:, :k]
     # <bool>[num_queries]
     correct_at_k = np.any(correct_at_k, axis=1)
+
+    #is recall because num of reference tables=total_queries
     return np.sum(correct_at_k) / total_queries
 
   precision_at = [k for k in [1, 5, 10, 15, 50, 100] if k <= _NUM_NEIGHBORS]
@@ -232,6 +243,7 @@ def _retrieve(
   logging.info('query embeddings size: %s', str(query_embeddings.shape))
 
   now = datetime.datetime.now()
+  # similarities still positive hear, nns = indices of table rep vectors
   similarities, nns = index.neighbors(query_embeddings)
   time = (datetime.datetime.now() - now).total_seconds()
   logging.info('Time required for computing nearest neighbors:= %f secs', time)
@@ -257,6 +269,7 @@ def _save_neighbors_to_file(
       query_id = example.query_id
       table_ids = [tables[int(index)].table_id for index in neighbors[i, :]]
       # Negate similarities for backwards compatibility
+      # smallest is actually the closest!
       scores = [-float(similarity) for similarity in similarities[i, :]]
       query_to_neighbors = {
           'query_id':
@@ -287,6 +300,8 @@ def process_predictions(
   Returns:
     A dictionary with precision_at_k metrics for different values of k.
   """
+  # similarities: each row is similarities sorted in descending order
+  # neighbors: each row is table indices sorted by sim in descending order
   similarities, neighbors = _retrieve(queries, index)
 
   if retrieval_results_file_path:

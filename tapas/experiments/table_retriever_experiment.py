@@ -293,6 +293,7 @@ def main(_):
         model_dir=estimator.model_dir,
         total_steps=total_steps,
         marker_file_prefix=marker_file_prefix,
+        minutes_to_sleep=FLAGS.minutes_to_sleep_before_predictions,
         single_step=single_step):
       try:
         if predict_input_fn is not None:

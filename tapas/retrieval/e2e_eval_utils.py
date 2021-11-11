@@ -372,10 +372,13 @@ def _get_best_metrics(
   """Evaluates prediction against all references."""
   metrics = []
   for reference_answer_text in reference_answer_texts:
+    # returns x \in [0,1]
     pr, rc, f1 = _compute_f1(
         reference_answer_text,
         best_answer_text,
     )
+
+    # return 0 or 1
     em = _compute_exact(
         reference_answer_text,
         best_answer_text,
@@ -461,7 +464,6 @@ def _evaluate_retrieval_e2e(
   num_examples_with_reference_table = 0
 
   num_errors_logged = 0
-
   for candidates in interactions.values():
     logging.log_every_n(
         logging.INFO,

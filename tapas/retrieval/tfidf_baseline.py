@@ -25,6 +25,11 @@ from tapas.protos import interaction_pb2
 from tapas.retrieval import tfidf_baseline_utils
 from tapas.scripts import prediction_utils
 
+#---debug starts---
+from collections import defaultdict
+import json
+#---debug ends---
+
 FLAGS = flags.FLAGS
 
 flags.DEFINE_list("interaction_files", None,
@@ -52,14 +57,36 @@ def evaluate(index, max_table_rank,
              rows):
   """Evaluates index against interactions."""
   ranks = []
+  
+  #---debug starts---
+  out = []
+  #---debug ends---
+
   for nr, interaction in enumerate(interactions):
     for question in interaction.questions:
       scored_hits = index.retrieve(question.original_text)
       reference_table_id = interaction.table.table_id
+
+      #---debug starts---
+      o = {}
+      o['qid'] = interaction.id #question.id
+      o['scores'] = scored_hits[:max_table_rank]
+      o['ref_table_id'] = reference_table_id
+      #---debug ends---
+
       for rank, (table_id, _) in enumerate(scored_hits[:max_table_rank]):
         if table_id == reference_table_id:
           ranks.append(rank)
+          #---debug starts---
+          o['rank'] = rank
+          #---debug ends---
           break
+      
+      #---debug starts---
+      if 'rank' not in o:
+        o['rank'] = 100000
+      out.append(o)
+      #---debug ends---
     if nr % (len(interactions) // 10) == 0:
       _print(f"Processed {nr:5d} / {len(interactions):5d}.")
 
@@ -69,6 +96,14 @@ def evaluate(index, max_table_rank,
   values = [f"{precision_at_th(threshold):.4}" for threshold in thresholds]
   rows.append(values)
 
+  #---debug starts---
+  split='dev'
+  exp='nobody'
+  with open(f'bm25_tm15_retrieval_{split}_{exp}_results.jsonl','w') as f:
+    for o in out:
+      json.dump(o,f)
+      f.write('\n')
+  #---debug ends---
 
 def create_index(tables,
                  title_multiplicator, use_bm25):
@@ -84,15 +119,46 @@ def create_index(tables,
       title_multiplicator=title_multiplicator,
   )
 
+# --------------- custom starts -----------------
+def create_custom_index(tables,title_multiplicator,weight_header, weight_content):
+  return tfidf_baseline_utils.create_uneven_bm25_index(
+      tables=tables,
+      title_multiplicator=title_multiplicator,
+      weight_header=weight_header,
+      weight_content = weight_content
+  )
+
+
+
+# --------------- custom ends -----------------
 
 def get_hparams():
   hparams = []
-  for multiplier in [1, 2]:
-    hparams.append({"multiplier": multiplier, "use_bm25": False})
-  for multiplier in [10, 15]:
+  # debug
+  #for multiplier in [1, 2]:
+  #  hparams.append({"multiplier": multiplier, "use_bm25": False})
+  for multiplier in [15]: #[10, 15]:
+  # debug ends
     hparams.append({"multiplier": multiplier, "use_bm25": True})
   return hparams
 
+# --------------- custom starts -----------------
+def get_exp_hparams():
+  _print("using custom hyper params for header and table")
+  _print("sleeping for 10s")
+  import time
+  time.sleep(10)
+  hparams = []
+  for w_c in [0,1]:
+    for w_h in [1]:
+      for multiplier in [0]:
+        hparams.append({
+          "multiplier": multiplier, #title multiplier
+          "weight_header":w_h, # header multiplier
+          "weight_content":w_c, # content multiplier
+          "use_bm25": True})
+  return hparams
+# --------------- custom ends -----------------
 
 def main(_):
 
@@ -103,17 +169,20 @@ def main(_):
     _print(f"Test set: {interaction_file}")
     interactions = list(prediction_utils.iterate_interactions(interaction_file))
 
-    for use_local_index in [True, False]:
+    for use_local_index in [False]: #[True, False]:
 
       rows = []
       row_names = []
-
-      for hparams in get_hparams():
-
+# --------------- custom starts -----------------
+      for hparams in get_exp_hparams(): #get_hparams():
+# --------------- custom ends -------------------
         name = "local" if use_local_index else "global"
         name += "_bm25" if hparams["use_bm25"] else "_tfidf"
+# --------------- custom starts -----------------
         name += f'_tm{hparams["multiplier"]}'
-
+        name += f'_hm{hparams["weight_header"]}'
+        name += f'_cm{hparams["weight_content"]}'
+# --------------- custom ends -----------------
         _print(name)
         if use_local_index:
           index = create_index(
@@ -122,11 +191,20 @@ def main(_):
               use_bm25=hparams["use_bm25"],
           )
         else:
-          index = create_index(
+# --------------- custom starts -----------------
+          index = create_custom_index(
               tables=tfidf_baseline_utils.iterate_tables(FLAGS.table_file),
               title_multiplicator=hparams["multiplier"],
-              use_bm25=hparams["use_bm25"],
+              weight_header=hparams["weight_header"],
+              weight_content=hparams["weight_content"]
           )
+          # index = create_index(
+          #     tables=tfidf_baseline_utils.iterate_tables(FLAGS.table_file),
+          #     title_multiplicator=hparams["multiplier"],
+          #     use_bm25=hparams["use_bm25"],
+          # )
+# --------------- custom ends -----------------
+
         _print("... index created.")
         evaluate(index, max_table_rank, thresholds, interactions, rows)
         row_names.append(name)

@@ -169,6 +169,8 @@ def main(argv):
 
   interaction_files = []
   for filename in tf.io.gfile.listdir(FLAGS.input_dir):
+    if filename.endswith('jsonl'):
+      continue
     interaction_files.append(os.path.join(FLAGS.input_dir, filename))
 
   tables = {}

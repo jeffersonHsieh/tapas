@@ -45,14 +45,18 @@ def iterate_interaction_tables(
 
 def _iterate_table_texts(table,
                          title_multiplicator):
+  # repeat title and header multiple times
   for _ in range(title_multiplicator):
     if table.document_title:
       yield table.document_title
     for column in table.columns:
       yield column.text
-  for row in table.rows:
-    for cell in row.cells:
-      yield cell.text
+  # ---------- debug starts ----------
+  # comment out to see retrieval performance no body text
+  # for row in table.rows:
+  #   for cell in row.cells:
+  #     yield cell.text
+  # ---------- debug ends ----------
 
 
 def _iterate_tokenized_table_texts(table,

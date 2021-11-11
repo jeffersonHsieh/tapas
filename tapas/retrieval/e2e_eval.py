@@ -21,6 +21,7 @@ from tapas.retrieval import e2e_eval_utils
 
 flags.DEFINE_string("interaction_file", None, "TFRecord of interactions.")
 flags.DEFINE_string("prediction_file", None, "Predictions in TSV format.")
+flags.DEFINE_string("vocab_file", None, "model vocab file.")
 
 FLAGS = flags.FLAGS
 
@@ -31,6 +32,7 @@ def main(argv):
   result = e2e_eval_utils.evaluate_retrieval_e2e(
       FLAGS.interaction_file,
       FLAGS.prediction_file,
+      vocab_file=FLAGS.vocab_file
   )
   print(result)
 
@@ -38,4 +40,5 @@ def main(argv):
 if __name__ == "__main__":
   flags.mark_flag_as_required("interaction_file")
   flags.mark_flag_as_required("prediction_file")
+  flags.mark_flag_as_required("vocab_file")
   app.run(main)

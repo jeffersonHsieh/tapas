@@ -161,6 +161,7 @@ class Mode(enum.Enum):
 class TestSet(enum.Enum):
   DEV = 1
   TEST = 2
+  TRAIN = 3
 
 
 @dataclasses.dataclass
@@ -314,6 +315,8 @@ def _get_test_filename(task, test_set):
     return task_utils.get_test_filename(task)
   if test_set == TestSet.DEV:
     return task_utils.get_dev_filename(task)
+  if test_set == TestSet.TRAIN:
+    return task_utils.get_train_filename(task)
   raise ValueError(f'Unknown test set: {test_set}')
 
 
