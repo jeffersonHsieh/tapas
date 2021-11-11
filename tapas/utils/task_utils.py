@@ -141,6 +141,7 @@ def create_interactions(
   if task == tasks.Task.SQA:
     tsv_dir = input_dir
   elif task == tasks.Task.WTQ:
+    # temp disable
     wtq_utils.convert(input_dir, output_dir)
     tsv_dir = output_dir
   elif task == tasks.Task.WIKISQL:

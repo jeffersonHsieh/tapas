@@ -1231,6 +1231,7 @@ class ToClassifierTensorflowExample(ToTrimmedTensorflowExample):
     """Runs tokenizer over the question text and document title if it's used."""
     question_tokens = self._tokenizer.tokenize(question.text)
     text_tokens = list(question_tokens)
+    #import pdb;pdb.set_trace()
     if self._use_document_title and table.document_title:
       # TODO(thomasmueller) Consider adding a different segment id.
       document_title_tokens = self._tokenizer.tokenize(table.document_title)
@@ -1252,6 +1253,7 @@ class ToClassifierTensorflowExample(ToTrimmedTensorflowExample):
     num_columns = self._get_num_columns(table)
 
     question = interaction.questions[index]
+    #debug, disable here
     if not interaction.questions[index].answer.is_valid:
       beam_metrics.Metrics.counter(
           _NS, 'Conversion skipped (answer not valid)').inc()

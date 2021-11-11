@@ -19,6 +19,8 @@ import collections
 import csv
 import os
 from typing import Iterable, Mapping, Text, Optional
+import json
+import time
 
 from absl import logging
 from tapas.protos import interaction_pb2
@@ -36,8 +38,10 @@ _Interactions = Iterable[interaction_pb2.Interaction]
 def _read_interactions(input_dir):
   """Reads interactions from TSV files."""
   filenames = [
-      fn for fn in file_utils.list_directory(input_dir) if fn.endswith('.tsv')
+      fn for fn in file_utils.list_directory(input_dir) if fn.endswith('.tsv') and 'train' not in fn
   ]
+  print('temp disabled reading train files in sqa_utils.py:_read_interactions')
+  time.sleep(5)
   interaction_dict = {}
   for filename in filenames:
     filepath = os.path.join(input_dir, filename)
@@ -123,7 +127,11 @@ def _parse_questions(interaction_dict,
                      report_filename):
   """Adds numeric value spans to all questions."""
   counters = collections.defaultdict(collections.Counter)
+  # debug
+  errs_map = {}
   for key, interactions in interaction_dict.items():
+    # debug
+    errs_map[key] = {}
     for interaction in interactions:
       questions = []
       for original_question in interaction.questions:
@@ -137,6 +145,11 @@ def _parse_questions(interaction_dict,
           question.answer.is_valid = False
           counters[key]['failed'] += 1
           counters[key]['failed-' + str(exc)] += 1
+          # debug
+          if str(exc) not in errs_map[key]:
+            errs_map[key][str(exc)] = []
+          errs_map[key][str(exc)].append(question.id)
+                
 
         questions.append(question)
 
@@ -144,6 +157,12 @@ def _parse_questions(interaction_dict,
       interaction.questions.extend(questions)
 
   _write_report(report_filename, supervision_modes, counters)
+  # debug
+  with open(os.path.join(os.path.dirname(report_filename),'err_ids.json'),'w') as f:
+    print('Writing invalid answer errors to file')
+    json.dump(errs_map,f)
+    time.sleep(5)
+        
 
 
 def _write_tfrecord(
@@ -183,6 +202,9 @@ def create_interactions(
   _add_tables(input_dir, interaction_dict)
   _parse_questions(interaction_dict, supervision_modes,
                    os.path.join(output_dir, 'report.tsv'))
+# temp disable
+  # print('temp disabled writing to tf records in sqa_utils.py:200')
+  # time.sleep(3)
   for filename, interactions in interaction_dict.items():
     _write_tfrecord(interactions, _get_output_filename(output_dir, filename),
                     token_selector)

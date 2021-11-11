@@ -1177,18 +1177,20 @@ def model_fn_builder(
 
 
 def input_fn(
+    # only used by read_dataset (returns a tf.data.Dataset)
     name,
     file_patterns,
     data_format,
     compression_type,
     is_training,
+    # only used by parse_table_examples
     max_seq_length,
     max_predictions_per_seq,
     add_aggregation_function_id,
     add_classification_labels,
     add_answer,
     include_id,
-    params,
+    params, # used by both
 ):
   """Returns an input_fn compatible with the tf.estimator API."""
   parse_example_fn = table_dataset.parse_table_examples(
@@ -1210,4 +1212,5 @@ def input_fn(
       compression_type=compression_type,
       is_training=is_training,
       params=params)
+#  import pdb;pdb.set_trace()
   return ds

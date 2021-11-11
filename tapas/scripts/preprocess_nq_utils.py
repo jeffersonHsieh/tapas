@@ -35,10 +35,18 @@ import pandas as pd
 from tapas.protos import interaction_pb2
 import tensorflow.compat.v1 as tf
 
+#-----------------modification-----------------
+from nltk import sent_tokenize
+#-----------------modification-----------------
+
 _NS = "main"
 
 _SpanT = Tuple[int, int]
 
+#-------debug info---------
+# infobox_collector = []
+
+#-------ends here----------
 
 class Split(enum.Enum):
   train = 0
@@ -49,6 +57,9 @@ class Split(enum.Enum):
 class Table:
   header: List[Text]
   rows: List[List[Text]]
+  #-------debug starts--------
+  is_infobox: bool = False
+  #-------debug ends--------
 
 
 def _str(value):
@@ -77,6 +88,26 @@ def _preprocess_html(table_html):
         tag.attrs[attr] = ""
   return table
 
+#----------------customized function----------------
+def _try_preprocess_html(table_html):
+    """Parses HTML with bs4 and fixes some glitches."""
+    # modified to accommodate bs4 tag
+    if type(table_html) != bs4.element.Tag:
+      table_html = table_html.decode("utf-8").replace("<br />", "<br /> ")
+      table = bs4.BeautifulSoup(table_html, "html5lib")
+      table = table.find("table")
+    else:
+      table = table_html
+    # Delete hidden style annotations.
+    for tag in table.find_all(attrs={"style": "display:none"}):
+      tag.decompose()
+    # Make sure "rowspan" is not set to an illegal value.
+    for tag in table.find_all("td"):
+      for attr in list(tag.attrs):
+        if attr == "rowspan":
+          tag.attrs[attr] = ""
+    return table
+#----------------customized function----------------
 
 def _strip_tags(html_text):
   """We turn the text into a table to make sure we parse just like in tables."""
@@ -180,7 +211,11 @@ def _read_html(table):
 
 def _parse_table(table_html):
   """Parses an HTML table to a dictionary of headers and rows."""
-  table = _preprocess_html(table_html.decode("utf-8"))
+  # --------------- use customized function ----------------
+  # table = _preprocess_html(table_html.decode("utf-8"))
+  table = _try_preprocess_html(table_html)
+  # ---------------------------------------------------------
+
   try:
     table_df = _read_html(str(table))
   except (ValueError, IndexError) as e:
@@ -190,7 +225,11 @@ def _parse_table(table_html):
   is_table_infobox = "infobox" in table.attrs[
       "class"] if "class" in table.attrs else False
   if is_table_infobox:
+    # TODO mark infobox tables and pass up counter or id 
+    beam.metrics.Metrics.counter(_NS, "Infoboxes").inc()
     table_dict = _parse_infobox_table(table_df)
+    if table_dict: 
+      table_dict.is_infobox = True
   else:
     table_dict = _parse_horizontal_table(table_df)
   return table_dict
@@ -219,22 +258,64 @@ def _get_span_to_table(
     document_url,
     table_spans,
     tables,
+    # ------TODO-----------
+    # trickle down table caption, section title, etc.
+    #-------ends here-------
 ):
   """Builds a mapping between a table span and its content."""
   if len(table_spans) != len(tables):
     raise ValueError("Number of table spans and tables do not match.")
   span_to_table = {}
+
   for span, table in zip(table_spans, tables):
     table_dict = _parse_table(table)
     if table_dict is None:
       continue
     fp = _get_table_fingerprint(table_dict)
-    table_id = f"{document_title}_{fp}"
+
+
+    # MODIFIED: add differentiating info
+    section_title = ''
+    section_title_tag = table.find_previous('span',class_='mw-headline')
+    if section_title_tag is not None:
+      if section_title_tag.text:
+        section_title = section_title_tag.text
+        beam.metrics.Metrics.counter(_NS, "has Section title").inc()
+    
+
+    caption = table.caption.text.strip('\n') if table.caption else ''
+    if not caption:
+      prev_p = table.find_previous_sibling('p')
+      if prev_p and prev_p.text.strip('\n'):
+        prev_p = sent_tokenize(prev_p.text.strip('\n'))[-1]
+        if "as shown below" in prev_p or \
+          "as follows" in prev_p or prev_p.endswith(":"):
+          caption = prev_p
+          beam.metrics.Metrics.counter(_NS, "Caption from p tag").inc()
+
+    combined_title = document_title+'_'+section_title if section_title else document_title
+    table_id = f"{combined_title}_{fp}"
+    #---------------------Modification ends here---------------------
+
+
+    # table_id = f"{document_title}_{fp}"
+    #-------debug info---------
+    # if table_dict.is_infobox:
+    #   infobox_collector.append(table_id)
+    #   if len(infobox_collector)%10 == 0:
+    #     print(len(infobox_collector))
+    #-------ends here----------
+
     table = _get_table_proto(
         table_id,
         document_title,
         document_url,
         table_dict,
+        # ------TODO: DONE-----------
+        # trickle down table caption, section title, etc.
+        section_title,
+        caption
+        #-------ends here-------
     )
     span_to_table[span] = table
   return span_to_table
@@ -245,12 +326,25 @@ def _get_table_proto(
     document_title,
     document_url,
     table_dict,
+    # ------TODO-----------
+    # trickle down table caption, section title, etc.
+    section_title,
+    caption
+    #-------ends here-------
 ):
   """Converts a table dictionary to a Table proto."""
   table = interaction_pb2.Table()
   table.table_id = table_id
-  table.document_title = document_title
+  table.document_title = document_title+'###'+section_title+'###'+caption
   table.document_url = document_url
+  table.caption = caption
+  table.section_title = section_title
+  table.is_infobox = table_dict.is_infobox
+    # ------TODO-----------
+    # append table caption, section title, etc. to table proto
+    # table.caption = caption
+    # table.document_title +='_'+section_title
+    #-------ends here-------
 
   for column in table_dict.header:
     table.columns.add().text = column
@@ -484,6 +578,10 @@ def parse(line,):
   html_bytes = doc_html.encode()
 
   annotations_spans, table_spans = _get_spans(html_bytes, sample["annotations"])
+  
+  # TODO extract table captions and section title
+  soup = bs4.BeautifulSoup(doc_html)
+  bs4tables = soup.find_all('table')
 
   # Stop if there are no tables in the document, or there are no short answers.
   if not table_spans or not annotations_spans:
@@ -502,7 +600,10 @@ def parse(line,):
       document_title,
       document_url,
       table_spans,
-      tables=[html_bytes[begin:end] for begin, end in table_spans],
+      # tables=[html_bytes[begin:end] for begin, end in table_spans],
+      # ------------modified----------------
+      tables = bs4tables
+      # ------------modified ends----------------
   )
 
   answer_texts = []
@@ -519,6 +620,9 @@ def parse(line,):
           example_id,
           question_text,
       ))
+#Alternative TODO
+# float up infobox info and report it in final dataset
+  
   return {
       "example_id": example_id,
       "contained": bool(interactions),
@@ -546,6 +650,16 @@ def write_interactions_to_files(
     output_path,
 ):
   """Write interactions to tf records. Replaces tables."""
+
+  #---- debug info----
+  # if len(infobox_collector)>0:
+  #   print("infobox_collector:")
+  #   print(len(infobox_collector))
+  #   with open('/workspace/hsiehcc/new_nq/infobox_id.txt', 'w') as f:
+  #     for infobox_id in infobox_collector:
+  #       f.write(str(infobox_id)+'\n')
+  #---- ends here----
+
 
   table_dict = {}
   for table in tables:
