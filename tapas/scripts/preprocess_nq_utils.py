@@ -36,6 +36,8 @@ from tapas.protos import interaction_pb2
 import tensorflow.compat.v1 as tf
 
 #-----------------modification-----------------
+import nltk
+nltk.download('punkt')
 from nltk import sent_tokenize
 #-----------------modification-----------------
 
@@ -59,6 +61,7 @@ class Table:
   rows: List[List[Text]]
   #-------debug starts--------
   is_infobox: bool = False
+  table_html_str: Text = ""
   #-------debug ends--------
 
 
@@ -232,6 +235,8 @@ def _parse_table(table_html):
       table_dict.is_infobox = True
   else:
     table_dict = _parse_horizontal_table(table_df)
+  
+  table_dict.table_html_str = str(table_html)
   return table_dict
 
 
@@ -276,6 +281,9 @@ def _get_span_to_table(
 
     # MODIFIED: add differentiating info
     section_title = ''
+    # caption = ''
+    # if type(table) == bs4.element.Tag:
+    
     section_title_tag = table.find_previous('span',class_='mw-headline')
     if section_title_tag is not None:
       if section_title_tag.text:
@@ -293,8 +301,8 @@ def _get_span_to_table(
           caption = prev_p
           beam.metrics.Metrics.counter(_NS, "Caption from p tag").inc()
 
-    combined_title = document_title+'_'+section_title if section_title else document_title
-    table_id = f"{combined_title}_{fp}"
+    #combined_title = document_title+'_'+section_title if section_title else document_title
+    table_id = f"{document_title}_{fp}"
     #---------------------Modification ends here---------------------
 
 
@@ -335,11 +343,12 @@ def _get_table_proto(
   """Converts a table dictionary to a Table proto."""
   table = interaction_pb2.Table()
   table.table_id = table_id
-  table.document_title = document_title+'###'+section_title+'###'+caption
+  table.document_title = document_title
   table.document_url = document_url
   table.caption = caption
   table.section_title = section_title
   table.is_infobox = table_dict.is_infobox
+  table.html_str = table_dict.table_html_str
     # ------TODO-----------
     # append table caption, section title, etc. to table proto
     # table.caption = caption
@@ -620,9 +629,7 @@ def parse(line,):
           example_id,
           question_text,
       ))
-#Alternative TODO
-# float up infobox info and report it in final dataset
-  
+
   return {
       "example_id": example_id,
       "contained": bool(interactions),

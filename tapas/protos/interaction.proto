@@ -115,6 +115,8 @@ message Table {
   // Section Title -- MODIFICATION
   optional string section_title = 11;
 
+  // table html -- MODIFICATION
+  optional string html_str = 12;
 
   extensions 10000 to max;
 }

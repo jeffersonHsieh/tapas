@@ -121,14 +121,16 @@ def build_pipeline(
   def _pipeline(root):
 
     lines = []
+    # print('Not skipping files!!!! sleep 10s')
+    # import time;time.sleep(10)
     for split, files in filenames.items():
     #--------------debug start-----------------
       if split == preprocess_nq_utils.Split.train:
-        print(f"skipping file {files}")
+        print(f"skipping files")# {files}")
         import time;time.sleep(10)
         continue
 
-      for filename in files: #truncate to 1 file
+      for filename in files[:1]: #disabled: truncate to 1 file
     #--------------debug end-----------------
         lines.append(
             root | f"Read {filename}" >> beam.io.textio.ReadFromText(
