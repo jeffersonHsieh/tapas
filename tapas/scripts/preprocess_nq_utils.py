@@ -228,7 +228,6 @@ def _parse_table(table_html):
   is_table_infobox = "infobox" in table.attrs[
       "class"] if "class" in table.attrs else False
   if is_table_infobox:
-    # TODO mark infobox tables and pass up counter or id 
     beam.metrics.Metrics.counter(_NS, "Infoboxes").inc()
     table_dict = _parse_infobox_table(table_df)
     if table_dict: 

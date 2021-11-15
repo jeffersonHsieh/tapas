@@ -209,6 +209,8 @@ def main(_):
               tables=tfidf_baseline_utils.iterate_tables(FLAGS.table_file),
               title_multiplicator=hparams["multiplier"],
               weight_header=hparams["w_h"],
+              weight_sec_title=hparams["w_sec"],
+              weight_caption=hparams["w_cap"],
               weight_content=hparams["w_c"]
           )
           # index = create_index(
