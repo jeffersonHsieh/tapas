@@ -192,7 +192,7 @@ def main(_):
 # --------------- custom starts -----------------
         name += f'_t1m{hparams["multiplier"]}'
         name += f'_t2m{hparams["w_sec"]}'
-        name += f'_t2m{hparams["w_cap"]}'
+        name += f'_t3m{hparams["w_cap"]}'
         name += f'_hm{hparams["w_h"]}'
         name += f'_cm{hparams["w_c"]}'
 # --------------- custom ends -----------------
