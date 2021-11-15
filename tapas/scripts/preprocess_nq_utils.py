@@ -235,8 +235,8 @@ def _parse_table(table_html):
       table_dict.is_infobox = True
   else:
     table_dict = _parse_horizontal_table(table_df)
-  
-  table_dict.table_html_str = str(table_html)
+  if table_dict:
+    table_dict.table_html_str = str(table_html)
   return table_dict
 
 
@@ -295,11 +295,17 @@ def _get_span_to_table(
     if not caption:
       prev_p = table.find_previous_sibling('p')
       if prev_p and prev_p.text.strip('\n'):
-        prev_p = sent_tokenize(prev_p.text.strip('\n'))[-1]
-        if "as shown below" in prev_p or \
-          "as follows" in prev_p or prev_p.endswith(":"):
-          caption = prev_p
-          beam.metrics.Metrics.counter(_NS, "Caption from p tag").inc()
+        try:
+          prev_p = sent_tokenize(prev_p.text.strip('\n'))
+          if len(prev_p)>0:
+            prev_p = prev_p[-1] 
+            if "as shown below" in prev_p or \
+              "as follows" in prev_p or prev_p.endswith(":"):
+              caption = prev_p
+              beam.metrics.Metrics.counter(_NS, "Caption from p tag").inc()
+        except IndexError:
+          pass
+        
 
     #combined_title = document_title+'_'+section_title if section_title else document_title
     table_id = f"{document_title}_{fp}"
@@ -591,7 +597,6 @@ def parse(line,):
   # TODO extract table captions and section title
   soup = bs4.BeautifulSoup(doc_html)
   bs4tables = soup.find_all('table')
-
   # Stop if there are no tables in the document, or there are no short answers.
   if not table_spans or not annotations_spans:
     if not table_spans:
@@ -604,6 +609,15 @@ def parse(line,):
         "tables": [],
         "interactions": [],
     }
+  if len(bs4tables) != len(table_spans):
+    beam.metrics.Metrics.counter(_NS, "BS4 parsing disagrees with regex").inc()
+    return {
+        "example_id": example_id,
+        "contained": False,
+        "tables": [],
+        "interactions": [],
+    }
+
 
   span_to_table = _get_span_to_table(
       document_title,
