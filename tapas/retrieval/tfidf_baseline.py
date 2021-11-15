@@ -97,12 +97,12 @@ def evaluate(index, max_table_rank,
   rows.append(values)
 
   #---debug starts---
-  split='dev'
-  exp='nobody'
-  with open(f'bm25_tm15_retrieval_{split}_{exp}_results.jsonl','w') as f:
-    for o in out:
-      json.dump(o,f)
-      f.write('\n')
+  # split='dev'
+  # exp='nobody'
+  # with open(f'bm25_tm15_retrieval_{split}_{exp}_results.jsonl','w') as f:
+  #   for o in out:
+  #     json.dump(o,f)
+  #     f.write('\n')
   #---debug ends---
 
 def create_index(tables,
@@ -120,12 +120,20 @@ def create_index(tables,
   )
 
 # --------------- custom starts -----------------
-def create_custom_index(tables,title_multiplicator,weight_header, weight_content):
+def create_custom_index(
+  tables,title_multiplicator,
+  weight_header, 
+  weight_sec_title,
+  weight_caption,
+  weight_content
+  ):
   return tfidf_baseline_utils.create_uneven_bm25_index(
       tables=tables,
       title_multiplicator=title_multiplicator,
+      weight_sec_title = weight_sec_title,
+      weight_caption = weight_caption,
       weight_header=weight_header,
-      weight_content = weight_content
+      weight_content=weight_content
   )
 
 
@@ -148,15 +156,18 @@ def get_exp_hparams():
   _print("sleeping for 10s")
   import time
   time.sleep(10)
+  import itertools
+  params = {
+      "w_c": [0,1], # content multiplier
+      "w_h": [0,1,10], # header multiplier
+      "multiplier": [1,10,15,20], #title multiplier
+      "w_cap": [0,1,10,15,30], # caption multiplier
+      "w_sec": [0,1,10,15,30], # section title multiplier
+      "use_bm25":[True]
+  }
   hparams = []
-  for w_c in [0,1]:
-    for w_h in [1]:
-      for multiplier in [0]:
-        hparams.append({
-          "multiplier": multiplier, #title multiplier
-          "weight_header":w_h, # header multiplier
-          "weight_content":w_c, # content multiplier
-          "use_bm25": True})
+  for xs in itertools.product(*params.values()):
+    hparams.append(dict(zip(params.keys(), xs)))
   return hparams
 # --------------- custom ends -----------------
 
@@ -179,9 +190,11 @@ def main(_):
         name = "local" if use_local_index else "global"
         name += "_bm25" if hparams["use_bm25"] else "_tfidf"
 # --------------- custom starts -----------------
-        name += f'_tm{hparams["multiplier"]}'
-        name += f'_hm{hparams["weight_header"]}'
-        name += f'_cm{hparams["weight_content"]}'
+        name += f'_t1m{hparams["multiplier"]}'
+        name += f'_t2m{hparams["w_sec"]}'
+        name += f'_t2m{hparams["w_cap"]}'
+        name += f'_hm{hparams["w_h"]}'
+        name += f'_cm{hparams["w_c"]}'
 # --------------- custom ends -----------------
         _print(name)
         if use_local_index:
@@ -195,8 +208,8 @@ def main(_):
           index = create_custom_index(
               tables=tfidf_baseline_utils.iterate_tables(FLAGS.table_file),
               title_multiplicator=hparams["multiplier"],
-              weight_header=hparams["weight_header"],
-              weight_content=hparams["weight_content"]
+              weight_header=hparams["w_h"],
+              weight_content=hparams["w_c"]
           )
           # index = create_index(
           #     tables=tfidf_baseline_utils.iterate_tables(FLAGS.table_file),

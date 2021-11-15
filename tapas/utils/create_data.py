@@ -403,7 +403,9 @@ class ToRetrievalTensorflowExample(beam.DoFn):
           beam.metrics.Metrics.counter(_NS, 'Conversion error').inc()
           beam.metrics.Metrics.counter(_NS, str(e)).inc()
         # Make sure examples with the same table are not grouped together.
-        title = interaction.table.document_title
+        title = f'{interaction.table.document_title.strip()} \
+          {interaction.table.section_title} \
+          {interaction.table.caption}'.strip() # MODIFIED lines
         new_key = f'{key}#{question.original_text}#{title}'
         if negative_example is not None:
           new_key = f'{new_key}_{negative_example.table.table_id}'
