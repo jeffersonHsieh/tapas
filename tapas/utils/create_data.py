@@ -407,9 +407,9 @@ class ToRetrievalTensorflowExample(beam.DoFn):
         
         #--------------- custom start ---------------
         if self._config.use_section_title:
-          title+=f'#{interaction.table.section_title}'.strip()
+          title+=f'#{interaction.table.section_title}'.strip('#')
         if self._config.use_caption:
-          title+=f'#{interaction.table.caption}'.strip()
+          title+=f'#{interaction.table.caption}'.strip('#')
         #--------------- custom end ---------------
 
         new_key = f'{key}#{question.original_text}#{title}'
