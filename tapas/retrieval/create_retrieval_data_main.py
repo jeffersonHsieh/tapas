@@ -35,6 +35,12 @@ flags.DEFINE_integer("cell_trim_length", -1,
                      "If > 0: Trim cells so that the length is <= this value.")
 flags.DEFINE_boolean("use_document_title", None,
                      "Include document title text in the tf example.")
+#---------- define custom flags-------------
+flags.DEFINE_boolean("use_section_title", None,
+                      "Include section title text in the tf example.")
+flags.DEFINE_boolean("use_caption", None,
+                      "Include caption in the tf example")
+#------------- custom flags end -------------
 flags.DEFINE_enum_class("converter_impl", create_data.ConverterImplType.PYTHON,
                         create_data.ConverterImplType,
                         "Implementation to map interactions to tf examples.")
@@ -55,6 +61,10 @@ def run(inputs, outputs, input_format):
               strip_column_names=False,
               cell_trim_length=FLAGS.cell_trim_length,
               use_document_title=FLAGS.use_document_title,
+#---------- define custom flags-------------
+              use_section_title=FLAGS.use_section_title,
+              use_caption=FLAGS.use_caption
+#------------- custom flags end -------------
           ),
           converter_impl=FLAGS.converter_impl,
       )).wait_until_finish()

@@ -157,7 +157,8 @@ class ClassifierConversionConfig(TrimmedConversionConfig):
 @dataclasses.dataclass(frozen=True)
 class RetrievalConversionConfig(TrimmedConversionConfig):
   use_document_title: bool = True
-  use_section_title_caption: bool = False
+  use_section_title: bool = False
+  use_caption: bool = False
 
 
 @dataclasses.dataclass(frozen=True)

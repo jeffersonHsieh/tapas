@@ -62,7 +62,8 @@ class ToRetrievalTensorflowExample(base.ToTrimmedTensorflowExample):
   def __init__(self, config):
     super(ToRetrievalTensorflowExample, self).__init__(config)
     self._use_document_title = config.use_document_title
-    self._use_section_title_captions = config.use_section_title_captions
+    self._use_section_title = config.use_section_title
+    self._use_caption = config.use_caption
   def convert(
       self,
       interaction,
@@ -80,12 +81,14 @@ class ToRetrievalTensorflowExample(base.ToTrimmedTensorflowExample):
     if num_columns >= self._max_column_id:
       num_columns = self._max_column_id - 1
 
-    if self._use_section_title_caption:
-      title = f"{table.document_title.strip()} \
-      {table.section_title} \
-      {table.caption}".strip() # MODIFIED
-    else:
-      title = table.document_title
+    # --------------- custom starts -----------------
+    title = table.document_title.strip()
+    if self._use_section_title:
+      title+=f" {table.section_title}".strip()
+
+    if self._use_caption:
+      title += f" {table.caption}".strip()
+    # --------------- custom ends -----------------
 
     if not self._use_document_title:
       title = ''
