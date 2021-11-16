@@ -159,15 +159,16 @@ def get_exp_hparams():
   import itertools
   params = {
       "w_c": [0,1], # content multiplier
-      "w_h": [0,1,10], # header multiplier
-      "multiplier": [1,10,15,20], #title multiplier
-      "w_cap": [0,1,10,15,30], # caption multiplier
-      "w_sec": [0,1,10,15,30], # section title multiplier
+      "w_h": [0,1], # header multiplier
+      "multiplier": [0,1], #title multiplier
+      "w_cap": [0,1], # caption multiplier
+      "w_sec": [0,1], # section title multiplier
       "use_bm25":[True]
   }
   hparams = []
   for xs in itertools.product(*params.values()):
     hparams.append(dict(zip(params.keys(), xs)))
+  print(hparams)
   return hparams
 # --------------- custom ends -----------------
 
