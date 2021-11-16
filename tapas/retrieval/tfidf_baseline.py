@@ -158,20 +158,21 @@ def get_exp_hparams():
       "w_c": [0,1], # content multiplier
       "w_h": [0,1], # header multiplier
       "multiplier": [0,1], #title multiplier
-      "w_cap": [0], # caption multiplier
+      "w_cap": [0,1], # caption multiplier
       "w_sec": [0,1], # section title multiplier
       "use_bm25":[True]
   }
   hparams = []
   for xs in itertools.product(*params.values()):
-    if not any(xs):
+    if not any(xs[:-1]):
+      print('all zeros!')
       continue
     hparams.append(dict(zip(params.keys(), xs)))
-    
+  
+  print(hparams)
   _print("sleeping for 10s")
   import time
   time.sleep(10)
-  print(hparams)
   return hparams
 # --------------- custom ends -----------------
 
