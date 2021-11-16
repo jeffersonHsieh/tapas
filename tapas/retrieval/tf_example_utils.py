@@ -84,10 +84,10 @@ class ToRetrievalTensorflowExample(base.ToTrimmedTensorflowExample):
     # --------------- custom starts -----------------
     title = table.document_title.strip()
     if self._use_section_title:
-      title+=f" {table.section_title}".strip()
+      title+=f"#{table.section_title}".strip('#')
 
     if self._use_caption:
-      title += f" {table.caption}".strip()
+      title += f"#{table.caption}".strip('#')
     # --------------- custom ends -----------------
 
     if not self._use_document_title:
