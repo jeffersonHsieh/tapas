@@ -28,6 +28,7 @@ from tapas.scripts import prediction_utils
 #---debug starts---
 from collections import defaultdict
 import json
+from pathlib import Path
 #---debug ends---
 
 FLAGS = flags.FLAGS
@@ -44,6 +45,7 @@ flags.DEFINE_integer("min_term_rank", 100,
 
 flags.DEFINE_boolean("drop_term_frequency", True,
                      "If True, ignore term frequency term.")
+flags.DEFINE_string("error_log_dir",None,"path to log error ids")
 
 
 def _print(message):
@@ -54,7 +56,13 @@ def _print(message):
 def evaluate(index, max_table_rank,
              thresholds,
              interactions,
-             rows):
+             rows,
+             #-------custom args-------
+             split,
+             hparam,
+             log_dir
+            #-------custom args end-------
+             ):
   """Evaluates index against interactions."""
   ranks = []
   
@@ -97,12 +105,11 @@ def evaluate(index, max_table_rank,
   rows.append(values)
 
   #---debug starts---
-  # split='dev'
-  # exp='nobody'
-  # with open(f'bm25_tm15_retrieval_{split}_{exp}_results.jsonl','w') as f:
-  #   for o in out:
-  #     json.dump(o,f)
-  #     f.write('\n')
+  if log_dir:
+    with open(log_dir/f'bm25_{split}_{hparam}_results.jsonl','w') as f:
+      for o in out:
+        json.dump(o,f)
+        f.write('\n')
   #---debug ends---
 
 def create_index(tables,
@@ -155,11 +162,11 @@ def get_exp_hparams():
   _print("using custom hyper params for header and table")
   import itertools
   params = {
-      "w_c": [0,1], # content multiplier
-      "w_h": [0,1], # header multiplier
-      "multiplier": [0,1], #title multiplier
-      "w_cap": [0,1], # caption multiplier
-      "w_sec": [0,1], # section title multiplier
+      "w_c": [0], # content multiplier
+      "w_h": [1], # header multiplier
+      "multiplier": [1], #title multiplier
+      "w_cap": [0], # caption multiplier
+      "w_sec": [1], # section title multiplier
       "use_bm25":[True]
   }
   hparams = []
@@ -180,6 +187,10 @@ def main(_):
 
   max_table_rank = FLAGS.max_table_rank
   thresholds = [1, 5, 10, 15, max_table_rank]
+  log_dir=None
+  if FLAGS.error_log_dir:
+    log_dir = Path(FLAGS.error_log_dir)
+    log_dir.mkdir(exist_ok=True,parents=True)
 
   for interaction_file in FLAGS.interaction_files:
     _print(f"Test set: {interaction_file}")
@@ -209,7 +220,7 @@ def main(_):
               use_bm25=hparams["use_bm25"],
           )
         else:
-# --------------- custom starts -----------------
+          # --------------- custom starts -----------------
           index = create_custom_index(
               tables=tfidf_baseline_utils.iterate_tables(FLAGS.table_file),
               title_multiplicator=hparams["multiplier"],
@@ -217,16 +228,21 @@ def main(_):
               weight_sec_title=hparams["w_sec"],
               weight_caption=hparams["w_cap"],
               weight_content=hparams["w_c"]
-          )
+            )
           # index = create_index(
           #     tables=tfidf_baseline_utils.iterate_tables(FLAGS.table_file),
           #     title_multiplicator=hparams["multiplier"],
           #     use_bm25=hparams["use_bm25"],
           # )
-# --------------- custom ends -----------------
+          # --------------- custom ends -----------------
 
         _print("... index created.")
-        evaluate(index, max_table_rank, thresholds, interactions, rows)
+        #-------------added custom args-----------------
+        split = interaction_file.split('/')[-1].split('.')[0]
+        evaluate(
+          index, max_table_rank, thresholds, interactions, rows, 
+          split, name, log_dir=log_dir)
+        row_names.append(name)
         row_names.append(name)
 
         df = pd.DataFrame(rows, columns=thresholds, index=row_names)
