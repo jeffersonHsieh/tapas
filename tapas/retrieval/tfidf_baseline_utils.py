@@ -61,7 +61,7 @@ def _iterate_table_texts(table,
 # --------------- custom starts -----------------
 def _iterate_weighted_table_texts(
   table,weight_title,weight_header,weight_content,
-  weight_sec_title,weight_caption):
+  weight_sec_title,weight_caption,weight_abbv):
     # repeat title and header multiple times
   for _ in range(weight_title):
     if table.document_title:
@@ -79,18 +79,24 @@ def _iterate_weighted_table_texts(
     for row in table.rows:
       for cell in row.cells:
         yield cell.text
+  for _ in range(weight_abbv):
+    if table.abbvs:
+      for abbv in table.abbvs:
+        yield f"{abbv.abbreviation} is {abbv.expansion}"
+      
 
 def _iterate_custom_tokenized_table_texts(table,
                                    title_multiplicator, 
                                    weight_header,
                                    weight_content,
                                    weight_sec_title,
-                                   weight_caption
+                                   weight_caption,
+                                   weight_abbv
                                    ):
   for text in _iterate_weighted_table_texts(
     table, title_multiplicator, 
     weight_header, weight_content, weight_sec_title,
-    weight_caption):
+    weight_caption, weight_abbv):
     yield from _tokenize(text)
 
 # ---------------- custom ends -------------------
@@ -250,7 +256,8 @@ def create_uneven_bm25_index(
     weight_header=1,
     weight_content=1,
     weight_sec_title=1,
-    weight_caption=1
+    weight_caption=1,
+    weight_abbv=1
 ):
   """Creates a new index."""
   corpus = []
@@ -263,7 +270,8 @@ def create_uneven_bm25_index(
           weight_header,
           weight_content,
           weight_sec_title,
-          weight_caption
+          weight_caption,
+          weight_abbv
           )))
     table_ids.append(table.table_id)
   return BM25Index(corpus, table_ids)
