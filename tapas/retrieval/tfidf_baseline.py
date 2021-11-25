@@ -110,6 +110,7 @@ def evaluate(index, max_table_rank,
       for o in out:
         json.dump(o,f)
         f.write('\n')
+    _print(f'error logged to {str(log_dir)}/bm25_{split}_{hparam}_results.jsonl')
   #---debug ends---
 
 def create_index(tables,
@@ -163,9 +164,9 @@ def get_exp_hparams():
   import itertools
   params = {
       "w_c": [0], # content multiplier
-      "w_h": [1], # header multiplier
-      "multiplier": [1], #title multiplier
-      "w_cap": [0], # caption multiplier
+      "w_h": [0], # header multiplier
+      "multiplier": [1,4,2,0], #title multiplier
+      "w_cap": [0,1], # caption multiplier
       "w_sec": [1], # section title multiplier
       "use_bm25":[True]
   }
@@ -242,7 +243,6 @@ def main(_):
         evaluate(
           index, max_table_rank, thresholds, interactions, rows, 
           split, name, log_dir=log_dir)
-        row_names.append(name)
         row_names.append(name)
 
         df = pd.DataFrame(rows, columns=thresholds, index=row_names)
