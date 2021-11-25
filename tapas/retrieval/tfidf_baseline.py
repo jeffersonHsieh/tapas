@@ -132,7 +132,8 @@ def create_custom_index(
   weight_header, 
   weight_sec_title,
   weight_caption,
-  weight_content
+  weight_content,
+  weight_abbv
   ):
   return tfidf_baseline_utils.create_uneven_bm25_index(
       tables=tables,
@@ -140,7 +141,8 @@ def create_custom_index(
       weight_sec_title = weight_sec_title,
       weight_caption = weight_caption,
       weight_header=weight_header,
-      weight_content=weight_content
+      weight_content=weight_content,
+      weight_abbv=weight_abbv
   )
 
 
@@ -163,11 +165,12 @@ def get_exp_hparams():
   import itertools
   params = {
       "w_c": [0], # content multiplier
-      "w_h": [1], # header multiplier
+      "w_h": [0], # header multiplier
       "multiplier": [1], #title multiplier
       "w_cap": [0], # caption multiplier
       "w_sec": [1], # section title multiplier
-      "use_bm25":[True]
+      "use_bm25":[True],
+      "abbv":[1]
   }
   hparams = []
   for xs in itertools.product(*params.values()):
@@ -211,6 +214,7 @@ def main(_):
         name += f'_t3m{hparams["w_cap"]}'
         name += f'_hm{hparams["w_h"]}'
         name += f'_cm{hparams["w_c"]}'
+        name += f'_cm{hparams["abbv"]}'
 # --------------- custom ends -----------------
         _print(name)
         if use_local_index:
@@ -227,7 +231,8 @@ def main(_):
               weight_header=hparams["w_h"],
               weight_sec_title=hparams["w_sec"],
               weight_caption=hparams["w_cap"],
-              weight_content=hparams["w_c"]
+              weight_content=hparams["w_c"],
+              weight_abbv=hparams["abbv"]
             )
           # index = create_index(
           #     tables=tfidf_baseline_utils.iterate_tables(FLAGS.table_file),

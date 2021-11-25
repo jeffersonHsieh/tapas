@@ -118,8 +118,18 @@ message Table {
   // table html -- MODIFICATION
   optional string html_str = 12;
 
+  // abbreviation -- MODIFICATION
+  repeated abbreviation abbvs = 13;
+
   extensions 10000 to max;
 }
+
+// abbreviation -- MODIFICATION
+message abbreviation {
+  optional string abbreviation = 1;
+  optional string expansion = 2;
+}
+
 
 message Cell {
   optional string text = 1;
