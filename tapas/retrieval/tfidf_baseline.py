@@ -131,6 +131,7 @@ def evaluate(index, max_table_rank,
       for o in out:
         json.dump(o,f)
         f.write('\n')
+    _print(f'error logged to {str(log_dir)}/bm25_{split}_{hparam}_results.jsonl')
   #---debug ends---
 
 def create_index(tables,
