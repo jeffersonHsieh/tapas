@@ -64,11 +64,13 @@ class ToRetrievalTensorflowExample(base.ToTrimmedTensorflowExample):
     self._use_document_title = config.use_document_title
     self._use_section_title = config.use_section_title
     self._use_caption = config.use_caption
+    self._use_abbv = config.use_abbv
   def convert(
       self,
       interaction,
       index,
       negative_example,
+      is_table = False
   ):
     """Converts question at 'index' to example."""
     table = interaction.table
@@ -82,12 +84,18 @@ class ToRetrievalTensorflowExample(base.ToTrimmedTensorflowExample):
       num_columns = self._max_column_id - 1
 
     # --------------- custom starts -----------------
+    
     title = table.document_title.strip()
     if self._use_section_title:
       title+=f"#{table.section_title}".strip('#')
 
     if self._use_caption:
       title += f"#{table.caption}".strip('#')
+    
+    if is_table and self._use_abbv:
+      for abbv in table.abbvs:
+        title+= f"#{abbv.expansion} is abbreviated as {abbv.abbreviation}".strip('#')
+
     # --------------- custom ends -----------------
 
     if not self._use_document_title:

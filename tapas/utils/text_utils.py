@@ -189,9 +189,12 @@ def normalize_for_match(text):
   return " ".join(text.lower().split())
 
 
-def format_text(text):
+def format_text(text, cased=False):
   """Lowercases and strips punctuation."""
-  text = text.lower().strip()
+  if cased:
+    text = text.strip()
+  else:
+    text = text.lower().strip()
   if text == "n/a" or text == "?":
     text = constants.EMPTY_TEXT
 
