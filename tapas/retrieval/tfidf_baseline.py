@@ -29,6 +29,9 @@ from tapas.scripts import prediction_utils
 from collections import defaultdict
 import json
 from pathlib import Path
+import itertools
+import time
+
 #---debug ends---
 
 FLAGS = flags.FLAGS
@@ -46,7 +49,10 @@ flags.DEFINE_integer("min_term_rank", 100,
 flags.DEFINE_boolean("drop_term_frequency", True,
                      "If True, ignore term frequency term.")
 flags.DEFINE_string("error_log_dir",None,"path to log error ids")
+#useless because queries in the dataset are all uncased
 flags.DEFINE_boolean("cased",False,"does not lower string in corpus & query(?) if cased")
+flags.DEFINE_boolean("oracle_abbv",False,"expand abbv in query using ref table abbv list")
+flags.DEFINE_string("tid_abbv_mapping_file",None,"path to tid2abbv mapping")
 
 def _print(message):
   logging.info(message)
@@ -61,7 +67,9 @@ def evaluate(index, max_table_rank,
              split,
              hparam,
              log_dir,
-             cased=False
+             cased=False,
+             oracle_abbv=False,
+             tid_to_abbv=None
             #-------custom args end-------
              ):
   """Evaluates index against interactions."""
@@ -72,8 +80,20 @@ def evaluate(index, max_table_rank,
   #---debug ends---
 
   for nr, interaction in enumerate(interactions):
+    if oracle_abbv:
+      qtexts = tfidf_baseline_utils._tokenize(question.original_text,cased=True)
+      for qtok in qtexts:
+        if qtok in tid_to_abbv[interaction.table.table_id]:
+          qtok = qtok+ f' ({tid_to_abbv[interaction.table.table_id][qtok]})'
+      qtext = ' '.join(qtexts)
+    else:
+      qtext = question.original_text
     for question in interaction.questions:
-      scored_hits = index.retrieve(question.original_text,cased=cased)
+      scored_hits = index.retrieve(
+        qtext,
+        cased=cased,
+        oracle_abbv=oracle_abbv
+        )
       reference_table_id = interaction.table.table_id
 
       #---debug starts---
@@ -165,7 +185,6 @@ def get_hparams():
 # --------------- custom starts -----------------
 def get_exp_hparams():
   _print("using custom hyper params for header and table")
-  import itertools
   params = {
       "w_c": [0], # content multiplier
       "w_h": [0], # header multiplier
@@ -173,8 +192,8 @@ def get_exp_hparams():
       "w_cap": [0], # caption multiplier
       "w_sec": [1], # section title multiplier
       "use_bm25":[True],
-      "abbv":[1],
-      "cased":[FLAGS.cased]
+      "abbv":[0,1]
+      
   }
   hparams = []
   for xs in itertools.product(*params.values()):
@@ -185,7 +204,6 @@ def get_exp_hparams():
   
   print(hparams)
   _print("sleeping for 10s")
-  import time
   time.sleep(10)
   return hparams
 # --------------- custom ends -----------------
@@ -219,7 +237,7 @@ def main(_):
         name += f'_hm{hparams["w_h"]}'
         name += f'_cm{hparams["w_c"]}'
         name += f'_am{hparams["abbv"]}'
-        if hparams['cased']:
+        if FLAGS.cased:
           name += '_cased'
 # --------------- custom ends -----------------
         _print(name)
@@ -239,7 +257,7 @@ def main(_):
               weight_caption=hparams["w_cap"],
               weight_content=hparams["w_c"],
               weight_abbv=hparams["abbv"],
-              cased = hparams['cased']
+              cased = FLAGS.cased
             )
           # index = create_index(
           #     tables=tfidf_baseline_utils.iterate_tables(FLAGS.table_file),
@@ -251,9 +269,14 @@ def main(_):
         _print("... index created.")
         #-------------added custom args-----------------
         split = interaction_file.split('/')[-1].split('.')[0]
+        if FLAGS.oracle_abbv:
+          if not FLAGS.tid_abbv_mapping_file:
+            raise ValueError('tid_abbv_mapping_file is required for oracle_abbv')
+          name+='_oracle_query_exp'
+
         evaluate(
           index, max_table_rank, thresholds, interactions, rows, 
-          split, name, log_dir=log_dir,cased=hparams['cased'])
+          split, name, log_dir=log_dir,cased=hparams['cased'], oracle_abbv=FLAGS.oracle_abbv)
         row_names.append(name)
 
         df = pd.DataFrame(rows, columns=thresholds, index=row_names)
