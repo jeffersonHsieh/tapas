@@ -82,7 +82,7 @@ def _iterate_weighted_table_texts(
   for _ in range(weight_abbv):
     if table.abbvs:
       for abbv in table.abbvs:
-        yield f"{abbv.abbreviation} is {abbv.expansion}"
+        yield f"{abbv.abbreviation}"#" is {abbv.expansion}"
       
 
 def _iterate_custom_tokenized_table_texts(table,
@@ -91,13 +91,14 @@ def _iterate_custom_tokenized_table_texts(table,
                                    weight_content,
                                    weight_sec_title,
                                    weight_caption,
-                                   weight_abbv
+                                   weight_abbv,
+                                   cased=False
                                    ):
   for text in _iterate_weighted_table_texts(
     table, title_multiplicator, 
     weight_header, weight_content, weight_sec_title,
     weight_caption, weight_abbv):
-    yield from _tokenize(text)
+    yield from _tokenize(text, cased=cased) #try not lower????
 
 # ---------------- custom ends -------------------
 
@@ -107,8 +108,8 @@ def _iterate_tokenized_table_texts(table,
     yield from _tokenize(text)
 
 
-def _tokenize(text):
-  return text_utils.tokenize_text(text_utils.format_text(text))
+def _tokenize(text, cased=False):
+  return text_utils.tokenize_text(text_utils.format_text(text,cased))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -223,8 +224,8 @@ class BM25Index:
     self._table_ids = table_ids
     self._model = bm25.BM25(corpus)
 
-  def retrieve(self, question):
-    q_tokens = _tokenize(question)
+  def retrieve(self, question,cased=False):
+    q_tokens = _tokenize(question,cased)
     # TODO This is slow maybe we can improve efficiency.
     scores = self._model.get_scores(q_tokens)
     table_scores = [(self._table_ids[index], score)
@@ -257,7 +258,8 @@ def create_uneven_bm25_index(
     weight_content=1,
     weight_sec_title=1,
     weight_caption=1,
-    weight_abbv=1
+    weight_abbv=1,
+    cased = False
 ):
   """Creates a new index."""
   corpus = []
@@ -271,7 +273,8 @@ def create_uneven_bm25_index(
           weight_content,
           weight_sec_title,
           weight_caption,
-          weight_abbv
+          weight_abbv,
+          cased = cased
           )))
     table_ids.append(table.table_id)
   return BM25Index(corpus, table_ids)

@@ -46,7 +46,7 @@ flags.DEFINE_integer("min_term_rank", 100,
 flags.DEFINE_boolean("drop_term_frequency", True,
                      "If True, ignore term frequency term.")
 flags.DEFINE_string("error_log_dir",None,"path to log error ids")
-
+flags.DEFINE_boolean("cased",False,"does not lower string in corpus & query(?) if cased")
 
 def _print(message):
   logging.info(message)
@@ -60,7 +60,8 @@ def evaluate(index, max_table_rank,
              #-------custom args-------
              split,
              hparam,
-             log_dir
+             log_dir,
+             cased=False
             #-------custom args end-------
              ):
   """Evaluates index against interactions."""
@@ -72,7 +73,7 @@ def evaluate(index, max_table_rank,
 
   for nr, interaction in enumerate(interactions):
     for question in interaction.questions:
-      scored_hits = index.retrieve(question.original_text)
+      scored_hits = index.retrieve(question.original_text,cased=cased)
       reference_table_id = interaction.table.table_id
 
       #---debug starts---
@@ -134,7 +135,8 @@ def create_custom_index(
   weight_sec_title,
   weight_caption,
   weight_content,
-  weight_abbv
+  weight_abbv,
+  cased = False
   ):
   return tfidf_baseline_utils.create_uneven_bm25_index(
       tables=tables,
@@ -143,7 +145,8 @@ def create_custom_index(
       weight_caption = weight_caption,
       weight_header=weight_header,
       weight_content=weight_content,
-      weight_abbv=weight_abbv
+      weight_abbv=weight_abbv,
+      cased = cased
   )
 
 
@@ -171,7 +174,8 @@ def get_exp_hparams():
       "w_cap": [0], # caption multiplier
       "w_sec": [1], # section title multiplier
       "use_bm25":[True],
-      "abbv":[1]
+      "abbv":[1],
+      "cased":[FLAGS.cased]
   }
   hparams = []
   for xs in itertools.product(*params.values()):
@@ -215,7 +219,9 @@ def main(_):
         name += f'_t3m{hparams["w_cap"]}'
         name += f'_hm{hparams["w_h"]}'
         name += f'_cm{hparams["w_c"]}'
-        name += f'_cm{hparams["abbv"]}'
+        name += f'_am{hparams["abbv"]}'
+        if hparams['cased']:
+          name += '_cased'
 # --------------- custom ends -----------------
         _print(name)
         if use_local_index:
@@ -233,7 +239,8 @@ def main(_):
               weight_sec_title=hparams["w_sec"],
               weight_caption=hparams["w_cap"],
               weight_content=hparams["w_c"],
-              weight_abbv=hparams["abbv"]
+              weight_abbv=hparams["abbv"],
+              cased = hparams['cased']
             )
           # index = create_index(
           #     tables=tfidf_baseline_utils.iterate_tables(FLAGS.table_file),
@@ -247,7 +254,7 @@ def main(_):
         split = interaction_file.split('/')[-1].split('.')[0]
         evaluate(
           index, max_table_rank, thresholds, interactions, rows, 
-          split, name, log_dir=log_dir)
+          split, name, log_dir=log_dir,cased=hparams['cased'])
         row_names.append(name)
 
         df = pd.DataFrame(rows, columns=thresholds, index=row_names)

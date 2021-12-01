@@ -365,6 +365,7 @@ class ToRetrievalTensorflowExample(beam.DoFn):
       element):
     key, interaction = element
 
+    is_table = False
     if not interaction.questions:
       new_interaction = interaction_pb2.Interaction()
       new_interaction.CopyFrom(interaction)
@@ -373,6 +374,7 @@ class ToRetrievalTensorflowExample(beam.DoFn):
       new_question.text = ''
       new_question.id = 'FAKE'
       interaction = new_interaction
+      is_table = True
       beam.metrics.Metrics.counter(
           _NS, 'Fake Questions added for table only example').inc()
 
@@ -397,6 +399,7 @@ class ToRetrievalTensorflowExample(beam.DoFn):
               interaction,
               index,
               negative_example,
+              is_table=is_table
           )
           beam.metrics.Metrics.counter(_NS, 'Conversion success').inc()
         except ValueError as e:
@@ -410,6 +413,8 @@ class ToRetrievalTensorflowExample(beam.DoFn):
           title+=f'#{interaction.table.section_title}'.strip('#')
         if self._config.use_caption:
           title+=f'#{interaction.table.caption}'.strip('#')
+        # no need to add abbv here bc we don't want it in table id
+
         #--------------- custom end ---------------
 
         new_key = f'{key}#{question.original_text}#{title}'

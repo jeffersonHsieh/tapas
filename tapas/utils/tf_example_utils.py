@@ -159,6 +159,7 @@ class RetrievalConversionConfig(TrimmedConversionConfig):
   use_document_title: bool = True
   use_section_title: bool = False
   use_caption: bool = False
+  use_abbv: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
