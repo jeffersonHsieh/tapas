@@ -131,6 +131,51 @@ def get_hparams(task):
         'warmup_ratio': 0.0,
         'span_prediction': 'span',
     })
+  elif task == tasks.Task.MMQA:
+    params.update({
+        'num_train_examples': 200000 * 4,
+        'train_batch_size': 4,
+        'answer_loss_cutoff': 0.664694,
+        'cell_select_pref': 0.207951,
+        'huber_loss_delta': 0.121194,
+        'init_cell_selection_weights_to_zero': True,
+        'learning_rate': 0.00000193581, #second variable
+        'select_one_column': True,
+        'allow_empty_column_selection': False,
+        'temperature': 0.0352513,
+        'warmup_ratio': 0.128960,
+    })
+  elif task == tasks.Task.MMQA_plus_YN:
+    params.update({
+        'num_train_examples': 200000 * 4,
+        'train_batch_size': 4,
+        'answer_loss_cutoff': 0.664694,
+        'cell_select_pref': 0.207951,
+        'huber_loss_delta': 0.121194,
+        'init_cell_selection_weights_to_zero': True,
+        'num_classification_labels': 3,
+        'learning_rate': 0.00000193581, #second variable
+        'select_one_column': True,
+        'allow_empty_column_selection': False,
+        'temperature': 0.0352513,
+        'warmup_ratio': 0.128960,
+    })
+  elif task == tasks.Task.MMQA_hop:
+    params.update({
+        'num_train_examples': 200000 * 4,
+        'train_batch_size': 4,
+        'answer_loss_cutoff': 0.664694,
+        'cell_select_pref': 0.207951,
+        'huber_loss_delta': 0.121194,
+        'init_cell_selection_weights_to_zero': True,
+        'num_classification_labels': 3,
+        'learning_rate': 0.00000193581, #second variable
+        'select_one_column': True,
+        'allow_empty_column_selection': False,
+        'temperature': 0.0352513,
+        'warmup_ratio': 0.128960,
+    })
   else:
     raise ValueError(f'Unknown task: {task.name}')
   return params
+# next time try wikisql pretrained

@@ -40,6 +40,12 @@ flags.DEFINE_boolean("use_section_title", None,
                       "Include section title text in the tf example.")
 flags.DEFINE_boolean("use_caption", None,
                       "Include caption in the tf example")
+flags.DEFINE_boolean("use_content", True,
+                      "Include content in the tf example")
+flags.DEFINE_boolean("use_header", True,
+                      "Include content in the tf example")
+flags.DEFINE_boolean("oracle_abbv_expansion", False,
+                     "Expand abbreviations in the oracle.")
 #------------- custom flags end -------------
 flags.DEFINE_enum_class("converter_impl", create_data.ConverterImplType.PYTHON,
                         create_data.ConverterImplType,
@@ -63,7 +69,11 @@ def run(inputs, outputs, input_format):
               use_document_title=FLAGS.use_document_title,
 #---------- define custom flags-------------
               use_section_title=FLAGS.use_section_title,
-              use_caption=FLAGS.use_caption
+              use_caption=FLAGS.use_caption,
+              use_content=FLAGS.use_content,
+              use_header=FLAGS.use_header,
+              oracle_abbv_expansion=FLAGS.oracle_abbv_expansion
+              
 #------------- custom flags end -------------
           ),
           converter_impl=FLAGS.converter_impl,

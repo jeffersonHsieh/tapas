@@ -296,6 +296,7 @@ def model_fn_builder(config: RetrieverConfig):
                                         tf.zeros_like(features["input_mask"]),
                                         tf.ones_like(features["input_mask"]))
 
+######## split "features" into "features_table" and "features_query"
     features_table_names = [
         "input_ids", "input_mask", "segment_ids", "column_ids", "row_ids",
         "prev_label_ids", "column_ranks", "inv_column_ranks",
@@ -316,6 +317,7 @@ def model_fn_builder(config: RetrieverConfig):
     for name in sorted(features_table):
       tf.logging.info("  name = %s, shape = %s", name, features[name].shape)
 
+######## pass features to tapas model
     table_model = table_bert.create_model(
         features=features_table,
         disabled_features=config.disabled_features,
@@ -346,6 +348,8 @@ def model_fn_builder(config: RetrieverConfig):
         "numeric_relations":
             empty_table_features,
     }
+
+######## pass query features to tapas model # tapas model object is coupled with input data
     query_model = table_bert.create_model(
         features=features_query,
         disabled_features=config.disabled_features,
@@ -353,6 +357,7 @@ def model_fn_builder(config: RetrieverConfig):
         bert_config=config.bert_config,
     )
 
+######## compute query and table embedding from tapas
     table_hidden_representation = table_model.get_pooled_output()
     query_hidden_representation = query_model.get_pooled_output()
     if config.down_projection_dim > 0:
@@ -370,6 +375,9 @@ def model_fn_builder(config: RetrieverConfig):
     else:
       table_rep = table_hidden_representation
       query_rep = query_hidden_representation
+########^ table and query representation/computation done
+
+######## prepare label encoding
 
     batch_size = tf.shape(query_rep)[0]
     # Identity matrix, as gold logits are on the diagonal.
@@ -400,6 +408,9 @@ def model_fn_builder(config: RetrieverConfig):
       table_id_hash = data.table_id_hash
       question_hash = data.question_hash
       labels = data.labels
+
+######## compute similarity matrix of query-table pairs
+
     # <float32>[batch_size, batch_size|global_batch_size * num_tables]
     logits = tf.matmul(query_rep, table_rep, transpose_b=True)
     if config.mask_repeated_tables:
@@ -418,7 +429,7 @@ def model_fn_builder(config: RetrieverConfig):
           labels,
           logits,
       )
-
+######## compute cross entropy loss
     total_loss = tf.losses.softmax_cross_entropy(
         onehot_labels=labels, logits=logits)
 
@@ -479,6 +490,7 @@ def model_fn_builder(config: RetrieverConfig):
       else:
         table_rep_gold = table_rep
 
+      ######## returns query and table encodings for PREDICT mode as well
       predictions = {
           "query_rep": query_rep,
           "table_rep": table_rep_gold,
@@ -489,6 +501,7 @@ def model_fn_builder(config: RetrieverConfig):
       if "question_id" in features:
         predictions["query_id"] = features["question_id"]
       output_spec = tf.estimator.tpu.TPUEstimatorSpec(
+          # table reps are returned here
           mode=mode, predictions=predictions, scaffold_fn=scaffold_fn)
     return output_spec
 

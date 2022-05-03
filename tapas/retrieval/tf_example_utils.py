@@ -62,9 +62,14 @@ class ToRetrievalTensorflowExample(base.ToTrimmedTensorflowExample):
   def __init__(self, config):
     super(ToRetrievalTensorflowExample, self).__init__(config)
     self._use_document_title = config.use_document_title
+    #------- custom starts -------
     self._use_section_title = config.use_section_title
     self._use_caption = config.use_caption
     self._use_abbv = config.use_abbv
+    self._use_header = config.use_header
+    self._use_content = config.use_content
+    self._oracle_abbv_expansion = config.oracle_abbv_expansion
+    #------- custom ends -------
   def convert(
       self,
       interaction,
@@ -79,9 +84,20 @@ class ToRetrievalTensorflowExample(base.ToTrimmedTensorflowExample):
     if num_rows >= self._max_row_id:
       num_rows = self._max_row_id - 1
 
+    #------- custom starts -------
+    if not self._use_content:
+      num_rows = 0
+    #------- custom ends -------
+
     num_columns = len(table.columns)
     if num_columns >= self._max_column_id:
       num_columns = self._max_column_id - 1
+    
+    #------- custom starts -------
+    if not self._use_header:
+      num_columns = 0
+    
+    #------- custom ends -------
 
     # --------------- custom starts -----------------
     
@@ -133,6 +149,17 @@ class ToRetrievalTensorflowExample(base.ToTrimmedTensorflowExample):
             question.id, length=text_utils.DEFAULT_INTS_LENGTH))
 
     q_tokens = self._tokenizer.tokenize(question.text)
+    #------- custom starts -------
+    if self._oracle_abbv_expansion:
+      table_text_set = set([token.piece for row in tokenized_table.rows for cell in row for token in cell])
+      expansion = []
+      local_abbv_dict = {abbv.abbreviation:abbv.expansion for abbv in table.abbvs}
+      for token in q_tokens:
+        expansion.append(token)
+        if token.piece in local_abbv_dict and token.piece not in table_text_set:
+            expansion.extend(self._tokenizer.tokenize(local_abbv_dict[token.piece])) # token.original_text
+      q_tokens = expansion
+    #------- custom ends -------
     q_tokens = self._serialize_text(q_tokens)[0]
     q_tokens.append(base.Token(_SEP, _SEP))
     q_input_ids = self._to_token_ids(q_tokens)

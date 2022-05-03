@@ -152,6 +152,12 @@ class ClassifierConversionConfig(TrimmedConversionConfig):
   # For each data split how to up/down sample the dataset
   label_sampling_rate: Mapping[Tuple[Text, int],
                                float] = dataclasses.field(default_factory=dict)
+  is_multi_hop: bool = False
+  # self._is_multi_hop = config.is_multi_hop
+  use_bridge_entity: bool = False
+  # self._use_bridge_entity = config.use_bridge_entity
+  use_question_type: bool = False
+  # self._use_question_type = config.use_question_type
 
 
 @dataclasses.dataclass(frozen=True)
@@ -160,6 +166,9 @@ class RetrievalConversionConfig(TrimmedConversionConfig):
   use_section_title: bool = False
   use_caption: bool = False
   use_abbv: bool = False
+  use_header: bool = True
+  use_content: bool = True
+  oracle_abbv_expansion: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1225,6 +1234,11 @@ class ToClassifierTensorflowExample(ToTrimmedTensorflowExample):
     self._expand_entity_descriptions = config.expand_entity_descriptions
     self._use_entity_title = config.use_entity_title
     self._entity_descriptions_sentence_limit = config.entity_descriptions_sentence_limit
+    
+    # TODO (Chia-Chun)
+    self._is_multi_hop = config.is_multi_hop
+    self._use_bridge_entity = config.use_bridge_entity
+    self._use_question_type = config.use_question_type
 
   def _tokenize_extended_question(
       self,
@@ -1232,8 +1246,28 @@ class ToClassifierTensorflowExample(ToTrimmedTensorflowExample):
       table,
   ):
     """Runs tokenizer over the question text and document title if it's used."""
+    # (Chia-Chun): 
+    text_tokens = []
+    if self._use_question_type:
+      question_type_tokens = self._tokenizer.tokenize(question.question_type)
+      text_tokens.extend(question_type_tokens)
+      text_tokens.append(Token(_SEP, _SEP))
+    if self._is_multi_hop:
+      hop_tokens = self._tokenizer.tokenize("Hop is " + str(question.hop))
+      text_tokens.extend(hop_tokens)
+      text_tokens.append(Token(_SEP, _SEP))
+
+    if self._use_bridge_entity:
+      for bridge_entity in question.bridge_entities:
+        bridge_entity_tokens = self._tokenizer.tokenize(bridge_entity)
+        text_tokens.extend(bridge_entity_tokens)
+        text_tokens.append(Token(_SEP, _SEP))
+
+    
+
+
     question_tokens = self._tokenizer.tokenize(question.text)
-    text_tokens = list(question_tokens)
+    text_tokens.extend(list(question_tokens))
     #import pdb;pdb.set_trace()
     if self._use_document_title and table.document_title:
       # TODO(thomasmueller) Consider adding a different segment id.
@@ -1245,6 +1279,10 @@ class ToClassifierTensorflowExample(ToTrimmedTensorflowExample):
       context_title_tokens = self._tokenizer.tokenize(context_heading)
       text_tokens.append(Token(_SEP, _SEP))
       text_tokens.extend(context_title_tokens)
+    
+
+
+
     return text_tokens
 
   def convert(self, interaction,

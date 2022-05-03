@@ -22,13 +22,14 @@ import datetime
 import itertools
 import json
 from typing import Text, List, Tuple, Iterable, Any, Mapping, Optional
+import tqdm
 
 from absl import logging
 import dataclasses
 import numpy as np
 import tensorflow.compat.v1 as tf
 
-_NUM_NEIGHBORS = 100
+_NUM_NEIGHBORS = 10000
 
 
 class InnerProductNearestNeighbors:
@@ -117,7 +118,7 @@ def _to_ndarray(text):
 
 def _read_table_predictions(predictions_path):
   """Reads table predictions from a csv file."""
-  for row in iterate_predictions(predictions_path):
+  for row in tqdm.tqdm(iterate_predictions(predictions_path)):
     yield TableExample(
         table_id=row['table_id'],
         table=_to_ndarray(row['table_rep']),
@@ -126,7 +127,7 @@ def _read_table_predictions(predictions_path):
 
 def _read_query_predictions(predictions_path):
   """Reads query predictions from a csv file."""
-  for row in iterate_predictions(predictions_path):
+  for row in tqdm.tqdm(iterate_predictions(predictions_path)):
     yield QueryExample(
         table_ids=[row['table_id']],
         query_id=row['query_id'],
@@ -141,8 +142,7 @@ def _get_embeddings(examples):
 
 
 # TODO(thomasmueller) Rename this metric.
-def _get_precision_at_k(neighbors,
-                        gold_indices):
+def _get_precision_at_k(neighbors, gold_indices, thresholds):
   """Calculates different precision@k from the nearest neighbors.
 
   Args:
@@ -167,7 +167,7 @@ def _get_precision_at_k(neighbors,
   # <bool>[num_queries, num_neigbors, _MAX_NUM_TABLES_PER_QUERY]
   correct = np.equal(neighbors, gold_indices)
   # <bool>[num_queries, num_neigbors]
-  correct = np.any(correct, axis=-1)
+  correct = np.any(correct, axis=-1) # removes the extra axis
 
   total_queries = float(neighbors.shape[0])
 
@@ -180,7 +180,7 @@ def _get_precision_at_k(neighbors,
     #is recall because num of reference tables=total_queries
     return np.sum(correct_at_k) / total_queries
 
-  precision_at = [k for k in [1, 5, 10, 15, 50, 100] if k <= _NUM_NEIGHBORS]
+  precision_at = [k for k in thresholds if k <= _NUM_NEIGHBORS]
   precision_at_k = {
       'precision_at_{}'.format(k): _calc_precision_at_k(k) for k in precision_at
   }
@@ -288,6 +288,7 @@ def process_predictions(
     tables,
     index,
     retrieval_results_file_path,
+    thresholds
 ):
   """Processes predictions and calculates p@k.
 
@@ -309,7 +310,7 @@ def process_predictions(
                             retrieval_results_file_path)
 
   gold_indices = _get_gold_ids_in_global_indices(queries, tables)
-  precision_at_k = _get_precision_at_k(neighbors, gold_indices=gold_indices)
+  precision_at_k = _get_precision_at_k(neighbors, gold_indices=gold_indices, thresholds=thresholds)
   return precision_at_k
 
 
@@ -376,10 +377,11 @@ def eval_precision_at_k(
     query_prediction_files,
     table_prediction_files,
     make_tables_unique,
+    thresholds=[1, 5, 10, 15, 50, 100],
     retrieval_results_file_path = None):
   """Reads queries and tables, processes them to produce precision@k metrics."""
   queries = read_queries(query_prediction_files)
   tables = read_tables(table_prediction_files, make_tables_unique)
   index = build_table_index(tables)
   return process_predictions(queries, tables, index,
-                             retrieval_results_file_path)
+                             retrieval_results_file_path, thresholds=thresholds)

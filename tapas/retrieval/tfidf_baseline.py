@@ -53,6 +53,7 @@ flags.DEFINE_string("error_log_dir",None,"path to log error ids")
 flags.DEFINE_boolean("cased",False,"does not lower string in corpus & query(?) if cased")
 flags.DEFINE_boolean("oracle_abbv",False,"expand abbv in query using ref table abbv list")
 flags.DEFINE_string("tid_abbv_mapping_file",None,"path to tid2abbv mapping")
+flags.DEFINE_integer("sleep_after_hparam", None, "secs to sleep after printing hparams")
 
 def _print(message):
   logging.info(message)
@@ -69,7 +70,8 @@ def evaluate(index, max_table_rank,
              log_dir,
              cased=False,
              oracle_abbv=False,
-             tid_to_abbv=None
+             tid_to_abbv=None,
+             filter_stop_words=False
             #-------custom args end-------
              ):
   """Evaluates index against interactions."""
@@ -80,42 +82,48 @@ def evaluate(index, max_table_rank,
   #---debug ends---
 
   for nr, interaction in enumerate(interactions):
-    if oracle_abbv:
-      qtexts = tfidf_baseline_utils._tokenize(question.original_text,cased=True)
-      for qtok in qtexts:
-        if qtok in tid_to_abbv[interaction.table.table_id]:
-          qtok = qtok+ f' ({tid_to_abbv[interaction.table.table_id][qtok]})'
-      qtext = ' '.join(qtexts)
-    else:
-      qtext = question.original_text
     for question in interaction.questions:
+      # query expansion (original version)
+    # TODO: remove this------------
+      local_tid_to_abbv=None
+      if oracle_abbv:
+        local_tid_to_abbv_cased = tid_to_abbv[interaction.table.table_id]
+        local_tid_to_abbv = {}
+        for abbv,expansion in local_tid_to_abbv_cased.items():
+          if abbv in local_tid_to_abbv:
+            raise ValueError("duplicate abbv in oracle_abbv")
+          local_tid_to_abbv[abbv.lower()]=expansion
+    # -----------------------------
+
       scored_hits = index.retrieve(
-        qtext,
+        question.original_text,
         cased=cased,
-        oracle_abbv=oracle_abbv
+        use_oracle_abbv=oracle_abbv,
+        oracle_abbv_map=local_tid_to_abbv,
+        filter_stop_words=filter_stop_words
         )
       reference_table_id = interaction.table.table_id
 
-      #---debug starts---
+    #---debug starts---
       o = {}
       o['qid'] = interaction.id #question.id
       o['scores'] = scored_hits[:max_table_rank]
       o['ref_table_id'] = reference_table_id
-      #---debug ends---
+    #---debug ends---
 
       for rank, (table_id, _) in enumerate(scored_hits[:max_table_rank]):
         if table_id == reference_table_id:
           ranks.append(rank)
-          #---debug starts---
+        #---debug starts---
           o['rank'] = rank
-          #---debug ends---
+        #---debug ends---
           break
       
-      #---debug starts---
+    #---debug starts---
       if 'rank' not in o:
         o['rank'] = 100000
       out.append(o)
-      #---debug ends---
+    #---debug ends---
     if nr % (len(interactions) // 10) == 0:
       _print(f"Processed {nr:5d} / {len(interactions):5d}.")
 
@@ -125,14 +133,14 @@ def evaluate(index, max_table_rank,
   values = [f"{precision_at_th(threshold):.4}" for threshold in thresholds]
   rows.append(values)
 
-  #---debug starts---
+#---debug starts---
   if log_dir:
     with open(log_dir/f'bm25_{split}_{hparam}_results.jsonl','w') as f:
       for o in out:
         json.dump(o,f)
         f.write('\n')
     _print(f'error logged to {str(log_dir)}/bm25_{split}_{hparam}_results.jsonl')
-  #---debug ends---
+#---debug ends---
 
 def create_index(tables,
                  title_multiplicator, use_bm25):
@@ -156,18 +164,36 @@ def create_custom_index(
   weight_caption,
   weight_content,
   weight_abbv,
-  cased = False
+  cased = False,
+  filter_abbv=False,
+  use_bm25=True
   ):
-  return tfidf_baseline_utils.create_uneven_bm25_index(
-      tables=tables,
-      title_multiplicator=title_multiplicator,
-      weight_sec_title = weight_sec_title,
-      weight_caption = weight_caption,
-      weight_header=weight_header,
-      weight_content=weight_content,
-      weight_abbv=weight_abbv,
-      cased = cased
-  )
+  if use_bm25:
+    return tfidf_baseline_utils.create_uneven_bm25_index(
+        tables=tables,
+        title_multiplicator=title_multiplicator,
+        weight_sec_title = weight_sec_title,
+        weight_caption = weight_caption,
+        weight_header=weight_header,
+        weight_content=weight_content,
+        weight_abbv=weight_abbv,
+        cased = cased,
+        filter_abbv=filter_abbv
+    )
+  else:
+    return tfidf_baseline_utils.create_uneven_inverted_index(
+        tables=tables,
+        title_multiplicator=title_multiplicator,
+        weight_sec_title = weight_sec_title,
+        weight_caption = weight_caption,
+        weight_header=weight_header,
+        weight_content=weight_content,
+        weight_abbv=weight_abbv,
+        cased = cased,
+        filter_abbv=filter_abbv,
+        min_rank=FLAGS.min_term_rank,
+        drop_term_frequency=FLAGS.drop_term_frequency
+    )
 
 
 
@@ -187,13 +213,15 @@ def get_hparams():
 def get_exp_hparams():
   _print("using custom hyper params for header and table")
   params = {
-      "w_c": [0], # content multiplier
-      "w_h": [0], # header multiplier
-      "multiplier": [1], #title multiplier
+      "w_c": [1], # content multiplier
+      "w_h": [15], # header multiplier
+      "multiplier": [15], #title multiplier
       "w_cap": [0], # caption multiplier
-      "w_sec": [1], # section title multiplier
+      "w_sec": [15,0], # section title multiplier
       "use_bm25":[True],
-      "abbv":[0,1]
+      "abbv":[0],
+      "filter_abbv":[False],
+      "filter_stop_words":[True]
       
   }
   hparams = []
@@ -204,15 +232,21 @@ def get_exp_hparams():
     hparams.append(dict(zip(params.keys(), xs)))
   
   print(hparams)
-  _print("sleeping for 10s")
-  time.sleep(10)
+  if FLAGS.sleep_after_hparam:
+    _print(f"sleeping for {FLAGS.sleep_after_hparam}s")
+    time.sleep(FLAGS.sleep_after_hparam)
   return hparams
 # --------------- custom ends -----------------
 
 def main(_):
-
+  tid_to_abbv = None
+  if FLAGS.oracle_abbv:
+    if not FLAGS.tid_abbv_mapping_file:
+      raise ValueError('tid_abbv_mapping_file is required for oracle_abbv')
+    with open(FLAGS.tid_abbv_mapping_file) as f:
+      tid_to_abbv = json.load(f)
   max_table_rank = FLAGS.max_table_rank
-  thresholds = [1, 5, 10, 15, max_table_rank]
+  thresholds = [1,5,10,15,50,100,500, 1000, max_table_rank] #[1, 5, 10, 15, max_table_rank]
   log_dir=None
   if FLAGS.error_log_dir:
     log_dir = Path(FLAGS.error_log_dir)
@@ -238,8 +272,12 @@ def main(_):
         name += f'_hm{hparams["w_h"]}'
         name += f'_cm{hparams["w_c"]}'
         name += f'_am{hparams["abbv"]}'
+        name += '_filter_stw' if hparams["filter_stop_words"] else ''
+        name += "_filter_abbv" if hparams["filter_abbv"] else ''
         if FLAGS.cased:
           name += '_cased'
+        if FLAGS.oracle_abbv:
+          name+='_oracle_query_exp'
 # --------------- custom ends -----------------
         _print(name)
         if use_local_index:
@@ -258,7 +296,8 @@ def main(_):
               weight_caption=hparams["w_cap"],
               weight_content=hparams["w_c"],
               weight_abbv=hparams["abbv"],
-              cased = FLAGS.cased
+              cased = FLAGS.cased,
+              filter_abbv=hparams["filter_abbv"]
             )
           # index = create_index(
           #     tables=tfidf_baseline_utils.iterate_tables(FLAGS.table_file),
@@ -270,14 +309,12 @@ def main(_):
         _print("... index created.")
         #-------------added custom args-----------------
         split = interaction_file.split('/')[-1].split('.')[0]
-        if FLAGS.oracle_abbv:
-          if not FLAGS.tid_abbv_mapping_file:
-            raise ValueError('tid_abbv_mapping_file is required for oracle_abbv')
-          name+='_oracle_query_exp'
+
 
         evaluate(
           index, max_table_rank, thresholds, interactions, rows, 
-          split, name, log_dir=log_dir,cased=hparams['cased'], oracle_abbv=FLAGS.oracle_abbv)
+          split, name, log_dir=log_dir,cased=FLAGS.cased, oracle_abbv=FLAGS.oracle_abbv,
+          tid_to_abbv=tid_to_abbv, filter_stop_words=hparams['filter_stop_words'])
         row_names.append(name)
 
         df = pd.DataFrame(rows, columns=thresholds, index=row_names)

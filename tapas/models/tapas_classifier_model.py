@@ -1144,7 +1144,9 @@ def model_fn_builder(
                     outputs.logits_aggregation,
                     axis=-1,
                     output_type=tf.int32,
-                )
+                ),
+            "logits_aggr":
+              outputs.logits_aggregation
         })
       if do_model_classification:
         predictions.update({
@@ -1161,6 +1163,12 @@ def model_fn_builder(
           predictions.update({
               "logits_cls": outputs.logits_cls[:, 1] - outputs.logits_cls[:, 0]
           })
+        # elif config.num_classification_labels == 3:
+        #   predictions.update({
+        #       "logits_cls_0": outputs.logits_cls[:, 0],
+        #       "logits_cls_1": outputs.logits_cls[:, 1],
+        #       "logits_cls_2": outputs.logits_cls[:, 2]
+        #   })
         else:
           predictions.update({"logits_cls": outputs.logits_cls})
       if outputs.span_indexes is not None and outputs.span_logits is not None:

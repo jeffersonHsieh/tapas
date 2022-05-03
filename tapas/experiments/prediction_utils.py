@@ -349,10 +349,13 @@ def _write_prediction(
   if do_model_aggregation:
     prediction_to_write["gold_aggr"] = str(prediction["gold_aggr"][0])
     prediction_to_write["pred_aggr"] = str(prediction["pred_aggr"])
+    prediction_to_write["logits_aggr"] = json.dumps(list(map(float,prediction["logits_aggr"])))
+    # import pdb;pdb.set_trace()
   if do_model_classification:
     prediction_to_write["gold_cls"] = str(prediction["gold_cls"][0])
     prediction_to_write["pred_cls"] = str(prediction["pred_cls"])
-    prediction_to_write["logits_cls"] = str(prediction["logits_cls"])
+    prediction_to_write["logits_cls"] = json.dumps(list(map(float,prediction["logits_cls"])))
+    # import pdb;pdb.set_trace()
   writer.writerow(prediction_to_write)
 
 
@@ -410,7 +413,7 @@ def write_predictions(
     if output_token_probabilities:
       header.extend(["token_probabilities"])
     if do_model_aggregation:
-      header.extend(["gold_aggr", "pred_aggr"])
+      header.extend(["gold_aggr", "pred_aggr","logits_aggr"])
     if do_model_classification:
       header.extend(["gold_cls", "pred_cls", "logits_cls"])
     for prediction in predictions:

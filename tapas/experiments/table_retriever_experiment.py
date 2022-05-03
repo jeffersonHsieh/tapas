@@ -160,6 +160,8 @@ def _predict_and_export_metrics(
   tf.logging.info("Running predictor for step %d.", step)
   result = estimator.predict(input_fn=input_fn, checkpoint_path=checkpoint_path)
   output_predict_file = os.path.join(output_dir, f"{mode}_results_{step}.tsv")
+  ######### the returned predictions (including table and query rep) are extracted here
+  ######### from the TPUEstimatorSpec.predictions (it just returns that attribute for predict method?)
   write_predictions(result, output_predict_file)
 
   # Compute precision@k.

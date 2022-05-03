@@ -198,7 +198,10 @@ def format_text(text, cased=False):
   if text == "n/a" or text == "?":
     text = constants.EMPTY_TEXT
 
+  # replaces the "^", i.e. complement, of all characters+numbers
+  # \w = all characters in any language+"_"
   text = re.sub(r"[^\w\d]+", " ", text).replace("_", " ")
+
   text = " ".join(text.split())
   text = text.strip()
   if text:

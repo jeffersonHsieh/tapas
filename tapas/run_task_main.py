@@ -143,9 +143,23 @@ flags.DEFINE_boolean(
     'Drop last rows if table does not fit within max sequence '
     'length.')
 
+flags.DEFINE_boolean(
+    'is_mmqa_inference', False,
+    'Whether to use the MMQA inference pipeline.'
+)
+
 flags.DEFINE_string('table_pruning_config_file', None,
                     'Table pruning config file.')
 
+flags.DEFINE_integer('save_checkpoints_steps', 20000,'Save checkpoint during training every n steps')
+
+flags.DEFINE_integer('keep_checkpoint_max', 10,'Keep max n checkpoints')
+
+flags.DEFINE_float('keep_checkpoint_every_n_hours', 4.0, 'Keep checkpoint every n hours')
+
+flags.DEFINE_string('checkpoint_path', None, 'Checkpoint path (format: [model_dir]/[model_prefix].ckpt-[step])')
+# modify first line in '$model_dir/checkpoint' file will change the 'latest checkpoint' loaded by estimator
+# which is used when you don't provide a checkpoint_path
 _MAX_TABLE_ID = 512
 _MAX_PREDICTIONS_PER_SEQ = 20
 _CELL_CLASSIFICATION_THRESHOLD = 0.5
@@ -217,13 +231,19 @@ def _create_all_examples(
       vocab_file,
       task_utils.get_train_filename(task),
       batch_size=None,
-      test_mode=test_mode)
+      test_mode=test_mode,
+      task=task)
   _create_examples(interaction_dir, example_dir, vocab_file,
                    task_utils.get_dev_filename(task), test_batch_size,
-                   test_mode)
-  _create_examples(interaction_dir, example_dir, vocab_file,
-                   task_utils.get_test_filename(task), test_batch_size,
-                   test_mode)
+                   test_mode,task=task)
+
+  if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop]:
+    print('skipping test set for MMQA')
+
+  else:
+    _create_examples(interaction_dir, example_dir, vocab_file,
+                    task_utils.get_test_filename(task), test_batch_size,
+                    test_mode,task=task)
 
 
 def _to_tf_compression_type(
@@ -244,6 +264,7 @@ def _create_examples(
     filename,
     batch_size,
     test_mode,
+    task=None,
 ):
   """Creates TF example for a single dataset."""
   errfile = f'{filename}_errors.json' # debug
@@ -252,17 +273,36 @@ def _create_examples(
   interaction_path = os.path.join(interaction_dir, filename)
   example_path = os.path.join(example_dir, filename)
 
-  config = tf_example_utils.ClassifierConversionConfig(
-      vocab_file=vocab_file,
-      max_seq_length=FLAGS.max_seq_length,
-      use_document_title=FLAGS.use_document_title,
-      update_answer_coordinates=FLAGS.update_answer_coordinates,
-      drop_rows_to_fit=FLAGS.drop_rows_to_fit,
-      max_column_id=_MAX_TABLE_ID,
-      max_row_id=_MAX_TABLE_ID,
-      strip_column_names=False,
-      add_aggregation_candidates=False,
-  )
+  if task == tasks.Task.MMQA_hop:
+    config = tf_example_utils.ClassifierConversionConfig(
+        vocab_file=vocab_file,
+        max_seq_length=FLAGS.max_seq_length,
+        use_document_title=FLAGS.use_document_title,
+        update_answer_coordinates=FLAGS.update_answer_coordinates,
+        drop_rows_to_fit=FLAGS.drop_rows_to_fit,
+        max_column_id=_MAX_TABLE_ID,
+        max_row_id=_MAX_TABLE_ID,
+        strip_column_names=False,
+        add_aggregation_candidates=False,
+        is_multi_hop=True,
+        use_bridge_entity=True,
+        use_question_type=True
+    )
+  else:
+    config = tf_example_utils.ClassifierConversionConfig(
+        vocab_file=vocab_file,
+        max_seq_length=FLAGS.max_seq_length,
+        use_document_title=FLAGS.use_document_title,
+        update_answer_coordinates=FLAGS.update_answer_coordinates,
+        drop_rows_to_fit=FLAGS.drop_rows_to_fit,
+        max_column_id=_MAX_TABLE_ID,
+        max_row_id=_MAX_TABLE_ID,
+        strip_column_names=False,
+        add_aggregation_candidates=False,
+        is_multi_hop=False,
+        use_bridge_entity=False,
+        use_question_type=False
+    )
 
   converter = tf_example_utils.ToClassifierTensorflowExample(config)
 
@@ -399,10 +439,14 @@ def _train_and_predict(
     num_classification_labels = 0
     use_answer_as_supervision = False
   elif task in [
-      tasks.Task.WTQ, tasks.Task.WIKISQL, tasks.Task.WIKISQL_SUPERVISED
+      tasks.Task.WTQ, tasks.Task.WIKISQL, tasks.Task.WIKISQL_SUPERVISED,tasks.Task.MMQA
   ]:
     num_aggregation_labels = 4
     num_classification_labels = 0
+    use_answer_as_supervision = task != tasks.Task.WIKISQL_SUPERVISED
+  elif task in [tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop]:
+    num_aggregation_labels = 4
+    num_classification_labels = 3
     use_answer_as_supervision = task != tasks.Task.WIKISQL_SUPERVISED
   elif task == tasks.Task.TABFACT:
     num_classification_labels = 2
@@ -499,9 +543,9 @@ def _train_and_predict(
       master=tpu_options.master,
       model_dir=model_dir,
       tf_random_seed=FLAGS.tf_random_seed,
-      save_checkpoints_steps=1000,
-      keep_checkpoint_max=5,
-      keep_checkpoint_every_n_hours=4.0,
+      save_checkpoints_steps=FLAGS.save_checkpoints_steps,
+      keep_checkpoint_max=FLAGS.keep_checkpoint_max,
+      keep_checkpoint_every_n_hours=FLAGS.keep_checkpoint_every_n_hours,
       tpu_config=tf.estimator.tpu.TPUConfig(
           iterations_per_loop=tpu_options.iterations_per_loop,
           num_shards=tpu_options.num_tpu_cores,
@@ -546,7 +590,11 @@ def _train_and_predict(
     # until a checkpoint with 'num_train_steps' is reached.
     prev_checkpoint = None
     while True:
-      checkpoint = estimator.latest_checkpoint()
+      
+      if not loop_predict and FLAGS.checkpoint_path is not None:
+        checkpoint = FLAGS.checkpoint_path
+      else:
+        checkpoint = estimator.latest_checkpoint()
 
       if not loop_predict and not checkpoint:
         raise ValueError(f'No checkpoint found at {model_dir}.')
@@ -557,6 +605,7 @@ def _train_and_predict(
         continue
 
       current_step = int(os.path.basename(checkpoint).split('-')[1])
+      # import pdb;pdb.set_trace()
       _predict(
           estimator,
           task,
@@ -567,6 +616,7 @@ def _train_and_predict(
           use_answer_as_supervision,
           use_tpu=tapas_config.use_tpu,
           global_step=current_step,
+          checkpoint_path=checkpoint
       )
       if mode == Mode.PREDICT_AND_EVALUATE:
         _eval(
@@ -594,9 +644,16 @@ def _predict(
     use_answer_as_supervision,
     use_tpu,
     global_step,
+    checkpoint_path=None
 ):
   """Writes predictions for dev and test."""
   for test_set in TestSet:
+    if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop] and test_set == TestSet.TEST and not FLAGS.is_mmqa_inference:
+      _print('Skipping test set for MMQA.')
+      continue
+    if task in [tasks.Task.MMQA_hop] and test_set in [TestSet.DEV, TestSet.TRAIN] and FLAGS.is_mmqa_inference:
+      _print('Skipping Dev and Train Set for MMQA hop inference.')
+      continue
     _predict_for_set(
         estimator,
         do_model_aggregation,
@@ -620,7 +677,8 @@ def _predict(
             test_set,
             is_sequence=False,
             global_step=None,
-        ),
+          ),
+          checkpoint_path=checkpoint_path
     )
   if task == tasks.Task.SQA:
     if use_tpu:
@@ -657,6 +715,7 @@ def _predict_for_set(
     example_file,
     prediction_file,
     other_prediction_file,
+    checkpoint_path=None
 ):
   """Gets predictions and writes them to TSV file."""
   # TODO also predict for dev.
@@ -673,14 +732,17 @@ def _predict_for_set(
       add_classification_labels=do_model_classification,
       add_answer=use_answer_as_supervision,
       include_id=False)
-  result = estimator.predict(input_fn=predict_input_fn)
+  if checkpoint_path is not None:
+    result = estimator.predict(input_fn=predict_input_fn, checkpoint_path=checkpoint_path)
+  else:
+    result = estimator.predict(input_fn=predict_input_fn)
   exp_prediction_utils.write_predictions(
       result,
       prediction_file,
       do_model_aggregation=do_model_aggregation,
       do_model_classification=do_model_classification,
       cell_classification_threshold=_CELL_CLASSIFICATION_THRESHOLD,
-      output_token_probabilities=False,
+      output_token_probabilities=True,
       output_token_answers=True)
   tf.io.gfile.copy(prediction_file, other_prediction_file, overwrite=True)
 
@@ -724,6 +786,10 @@ def _eval(
 ):
   """Evaluate dev and test predictions."""
   for test_set in TestSet:
+    if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop] \
+      and test_set == TestSet.TEST:
+      _print('Skipping test set for MMQA.')
+      continue
     _eval_for_set(
         model_dir=model_dir,
         name=test_set.name.lower(),
@@ -777,18 +843,25 @@ def _eval_for_set(
     return
   test_examples = calc_metrics_utils.read_data_examples_from_interactions(
       interaction_file)
-  calc_metrics_utils.read_predictions(
+  if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop]:
+    calc_metrics_utils.read_mmqa_predictions(
       predictions_path=prediction_file,
       examples=test_examples,
-  )
+    )
+  else:
+    calc_metrics_utils.read_predictions(
+        predictions_path=prediction_file,
+        examples=test_examples,
+    )
   if task in [
       tasks.Task.SQA, tasks.Task.WTQ, tasks.Task.WIKISQL,
-      tasks.Task.WIKISQL_SUPERVISED
+      tasks.Task.WIKISQL_SUPERVISED, tasks.Task.MMQA
   ]:
     denotation_accuracy = calc_metrics_utils.calc_denotation_accuracy(
         examples=test_examples,
-        denotation_errors_path=None,
-        predictions_file_name=None,
+        denotation_errors_path=model_dir, #debug
+        predictions_file_name=os.path.basename(prediction_file),#debug\
+        global_step = global_step
     )
     if global_step is not None:
       _create_measurements_for_metrics(
@@ -799,6 +872,28 @@ def _eval_for_set(
       )
   elif task == tasks.Task.TABFACT:
     accuracy = calc_metrics_utils.calc_classification_accuracy(test_examples)
+    if global_step is not None:
+      _create_measurements_for_metrics(
+          {'accuracy': accuracy},
+          global_step=global_step,
+          model_dir=model_dir,
+          name=name,
+      )
+  elif task in [tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop]:
+    denotation_accuracy = calc_metrics_utils.calc_denotation_accuracy_mmqa(
+        examples=test_examples,
+        denotation_errors_path=model_dir, #debug
+        predictions_file_name=os.path.basename(prediction_file),#debug\
+        global_step = global_step
+    )
+    if global_step is not None:
+      _create_measurements_for_metrics(
+          {'denotation_accuracy': denotation_accuracy},
+          global_step=global_step,
+          model_dir=model_dir,
+          name=name,
+      )
+    accuracy = calc_metrics_utils.calc_classification_accuracy_mmqa(test_examples)
     if global_step is not None:
       _create_measurements_for_metrics(
           {'accuracy': accuracy},
@@ -869,7 +964,10 @@ def main(argv):
 
   if mode == Mode.CREATE_DATA:
     # Retrieval interactions are model dependant and are created in advance.
-    if task != tasks.Task.NQ_RETRIEVAL:
+    if task != tasks.Task.NQ_RETRIEVAL and task not in [
+      tasks.Task.MMQA, 
+      tasks.Task.MMQA_plus_YN,
+      tasks.Task.MMQA_hop]:
       _print('Creating interactions ...')
       #import time;time.sleep(5)
       token_selector = _get_token_selector()

@@ -48,6 +48,7 @@ class Example:
   weight: float = 1.0
   gold_class_index: Optional[int] = None
   pred_class_index: Optional[int] = None
+  question_type: Optional[Text] = None
 
 
 def write_to_tensorboard(
@@ -92,6 +93,7 @@ def example_from_question(
       'float_value') else None
   class_index = question.answer.class_index if question.answer.HasField(
       'class_index') else None
+  question_type = question.question_type if question.HasField('question_type') else None
   ex = Example(
       ex_id,
       question_text,
@@ -102,6 +104,7 @@ def example_from_question(
       float_value,
       has_gold_answer,
       gold_class_index=class_index,
+      question_type=question_type
   )
   return ex
 
@@ -123,6 +126,22 @@ def read_predictions(predictions_path, examples):
       if column_scores:
         example.weight = len(removed_column_scores) / len(column_scores)
 
+def read_mmqa_predictions(predictions_path, examples):
+  """Reads predictions from a csv file."""
+  for row in prediction_utils.iterate_predictions(predictions_path):
+    pred_id = row['question_id']
+    example = examples[pred_id]
+    example.pred_cell_coo = prediction_utils.parse_coordinates(
+        row['answer_coordinates'])
+    example.pred_agg_function = int(row.get('pred_aggr'))
+    example.pred_class_index = int(row.get('pred_cls'))
+    if 'column_scores' in row:
+      column_scores = list(filter(None, row['column_scores'][1:-1].split(' ')))
+      removed_column_scores = [
+          float(score) for score in column_scores if float(score) < 0.0
+      ]
+      if column_scores:
+        example.weight = len(removed_column_scores) / len(column_scores)
 
 def _calc_acc(correct):
   """Returns the fraction of true examples."""
@@ -292,6 +311,7 @@ class DenotationResult:
   values: Optional[List[Text]]
   agg_function: Optional[int]
   cell_coordinates: Optional[Set[Tuple[int, int]]]
+  class_index: Optional[int] = None
 
 
 @dataclasses.dataclass
@@ -388,6 +408,7 @@ def get_denotation_stats(example):
 def calc_weighted_denotation_accuracy(examples,
                                       denotation_errors_path,
                                       predictions_file_name,
+                                      global_step,
                                       add_weights):
   """Calculates the denotation accuracy weighted by the column scores."""
   examples_to_write = []
@@ -425,7 +446,7 @@ def calc_weighted_denotation_accuracy(examples,
   if denotation_errors_path is not None:
     examples_file = os.path.join(
         denotation_errors_path,
-        'denotation_examples_{}'.format(predictions_file_name))
+        'denotation_examples_{}_{}'.format(global_step, predictions_file_name))
     with tf.io.gfile.GFile(examples_file, 'w') as f:
       frame.to_csv(f, sep='\t')
 
@@ -443,12 +464,14 @@ def calc_weighted_denotation_accuracy(examples,
 
 def calc_denotation_accuracy(examples,
                              denotation_errors_path,
-                             predictions_file_name):
+                             predictions_file_name,
+                             global_step):
   """Calculates the denotation accuracy."""
   return calc_weighted_denotation_accuracy(
       examples,
       denotation_errors_path,
       predictions_file_name,
+      global_step=global_step,
       add_weights=False)['denotation_accuracy']
 
 
@@ -456,4 +479,181 @@ def calc_classification_accuracy(examples):
   """Calculates the classification accuracy."""
   total_correct = sum(1 for example in examples.values()
                       if example.gold_class_index == example.pred_class_index)
-  return total_correct / len(examples)
+  acc = total_correct / len(examples)
+  logging.info('classification_accuracy=%f', acc)
+  return acc
+
+def calc_classification_accuracy_mmqa(examples):
+  """Calculates the classification accuracy."""
+  # import pdb;pdb.set_trace()
+  YN_correct = sum(1 for example in examples.values()
+                      if example.gold_class_index == example.pred_class_index
+                      and example.pred_class_index!=2) # not neutral
+  neutral_correct = sum(1 for example in examples.values()
+                      if example.gold_class_index == example.pred_class_index
+                      and example.pred_class_index==2)
+  YN_acc = YN_correct / len(list(filter(lambda x:x.pred_class_index!=2,examples.values())))
+  neutral_acc = neutral_correct / len(list(filter(lambda x:x.pred_class_index==2,examples.values())))
+  logging.info('Y/N classification_accuracy=%f', YN_acc)
+  logging.info('neutral classification_accuracy=%f', neutral_acc)
+  return YN_acc
+
+
+def get_denotation_stats_mmqa(example):
+  """Computes denotation stats for single example."""
+  pred_result = _get_pred_denotation_result_mmqa(example)
+  gold_result = _get_gold_denotation_result_mmqa(example)
+  is_correct = False
+  if gold_result is not None:
+    is_correct = pred_result.denotation == gold_result.denotation
+
+  return DenotationStats(
+      is_correct=is_correct,
+      gold_result=gold_result,
+      pred_result=pred_result,
+      weight=example.weight * float(is_correct),
+  )
+
+def _get_gold_denotation_result_mmqa(example):
+  """Computes gold denotation of the example."""
+  if not example.has_gold_answer:
+    # No gold answer for this example.
+    return None
+  agg_function = example.gold_agg_function
+  cell_coo = example.gold_cell_coo
+  if example.float_answer is None and example.gold_class_index == 2:
+    denotation, values = execute(agg_function, cell_coo, example.table)
+  elif example.gold_class_index == 0:
+    denotation = ["No"]
+    values = []
+  elif example.gold_class_index == 1:
+    denotation = ["Yes"]
+    values = []
+  elif math.isnan(example.float_answer):
+    denotation = []
+    values = []
+  else:
+    denotation = [(example.float_answer)]
+    values = []
+  denotation = _to_float32s(denotation)
+  # if denotation == ["No"]:
+  #   import pdb;pdb.set_trace()
+  denotation = text_utils.normalize_answers(denotation)
+  return DenotationResult(
+      denotation=denotation,
+      values=values,
+      agg_function=agg_function,
+      cell_coordinates=cell_coo,
+      class_index= example.gold_class_index
+  )
+
+def _get_pred_denotation_result_mmqa(example):
+  """Computes predicted denotation."""
+  if example.pred_agg_function is None:
+    raise ValueError('pred_agg_function is None')
+  if example.pred_cell_coo is None:
+    raise ValueError('pred_cell_coo is None')
+
+  agg_function = example.pred_agg_function
+  cell_coo = example.pred_cell_coo
+  denotation, values = execute(agg_function, cell_coo, example.table)
+  if not values and example.pred_class_index != 2:
+    # if the predicted answer is not neutral, then the predicted answer is
+    # Y/N
+    denotation = ["Yes" if example.pred_class_index == 1 else "No"]     
+  denotation = _to_float32s(denotation)
+  denotation = text_utils.normalize_answers(denotation)
+  return DenotationResult(
+      denotation=denotation,
+      values=values,
+      agg_function=agg_function,
+      cell_coordinates=cell_coo,
+      class_index=example.pred_class_index
+  )
+def _get_debug_row_mmqa(result, table):
+  if not result:
+    return [None, None, None, None, None, None]
+  return [
+      result.denotation,
+      result.values,
+      _Answer.AggregationFunction.Name(result.agg_function),
+      sorted(result.cell_coordinates) if result.cell_coordinates else None,
+      _highlight_cells(result.cell_coordinates, table)
+      if result.cell_coordinates else None,
+      result.class_index
+  ]
+
+def calc_weighted_denotation_accuracy_mmqa(examples,
+                                      denotation_errors_path,
+                                      predictions_file_name,
+                                      global_step,
+                                      add_weights):
+  """Calculates the denotation accuracy weighted by the column scores."""
+  examples_to_write = []
+  for i,(example_id, example) in enumerate(sorted(examples.items())):
+    # if example.gold_class_index == example.pred_class_index and example.gold_class_index!=2:
+    #   import pdb;pdb.set_trace()
+    denotation_stats = get_denotation_stats_mmqa(example)
+    example_stats = [example_id, example.question_type, example.question, denotation_stats.is_correct]
+    if add_weights:
+      example_stats.append(example.weight)
+    examples_to_write.append(
+        example_stats +
+        _get_debug_row_mmqa(denotation_stats.gold_result, example.table) +
+        _get_debug_row_mmqa(denotation_stats.pred_result, example.table))
+    # if example.gold_class_index == example.pred_class_index and example.gold_class_index!=2:
+    #   import pdb;pdb.set_trace()
+  columns = [
+      'example_id',
+      'question_type',
+      'question',
+      'is_correct',
+      'gold denotation',
+      'gold cell values',
+      'gold cell coordinates',
+      'gold aggregation',
+      'gold table',
+      'gold class index',
+      'pred denotation',
+      'pred cell values',
+      'pred cell coordinates',
+      'pred aggregation',
+      'pred table',
+      'pred class index'
+  ]
+  if add_weights:
+    weights_columns = columns[:3]
+    weights_columns.append('weight')
+    weights_columns.extend(columns[3:])
+    columns = weights_columns
+  frame = pd.DataFrame(examples_to_write, columns=columns)
+
+  if denotation_errors_path is not None:
+    examples_file = os.path.join(
+        denotation_errors_path,
+        'denotation_examples_{}_{}'.format(global_step, predictions_file_name))
+    with tf.io.gfile.GFile(examples_file, 'w') as f:
+      frame.to_csv(f, sep='\t')
+
+  denotation_acc = frame['is_correct'].mean()
+  logging.info('denotation_accuracy=%f', denotation_acc)
+  stats = {'denotation_accuracy': denotation_acc}
+  if not add_weights:
+    return stats
+  weighted_denotation_acc = frame['weight'].mean()
+  stats['weighted_denotation_accuracy'] = weighted_denotation_acc
+  logging.info('weighted_denotation_accuracy=%f', weighted_denotation_acc)
+  logging.info('total_test_examples=%d', len(examples))
+  return stats
+
+def calc_denotation_accuracy_mmqa(examples,
+                             denotation_errors_path,
+                             predictions_file_name,
+                             global_step):
+  """Calculates the denotation accuracy."""
+  return calc_weighted_denotation_accuracy_mmqa(
+      examples,
+      denotation_errors_path,
+      predictions_file_name,
+      global_step=global_step,
+      add_weights=False)['denotation_accuracy']

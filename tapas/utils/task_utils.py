@@ -64,6 +64,12 @@ def get_train_filename(task):
     return 'train'
   if task in [tasks.Task.SQA, tasks.Task.WTQ]:
     return 'random-split-1-train'
+  if task in [tasks.Task.MMQA,tasks.Task.MMQA_plus_YN]:
+    return "MMQA_train_table_qs"
+  
+  if task in [tasks.Task.MMQA_hop]:
+    return "MMQA_train_table_multihop_qs"
+  
   raise ValueError(f'Unknown task: {task.name}')
 
 
@@ -75,6 +81,11 @@ def get_dev_filename(task):
     return 'dev'
   if task in [tasks.Task.SQA, tasks.Task.WTQ]:
     return 'random-split-1-dev'
+  if task in [tasks.Task.MMQA,tasks.Task.MMQA_plus_YN]:
+    return "MMQA_dev_table_qs"
+  if task in [tasks.Task.MMQA_hop]:
+    return "MMQA_dev_table_multihop_qs"
+
   raise ValueError(f'Unknown task: {task.name}')
 
 
@@ -84,6 +95,8 @@ def get_test_filename(task):
       tasks.Task.WTQ, tasks.Task.TABFACT, tasks.Task.NQ_RETRIEVAL
   ]:
     return 'test'
+  elif task in [tasks.Task.MMQA_hop]:
+    return 'MMQA_temp_test'
   raise ValueError(f'Unknown task: {task.name}')
 
 

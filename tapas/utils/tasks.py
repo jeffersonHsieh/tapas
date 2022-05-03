@@ -30,3 +30,6 @@ class Task(enum.Enum):
   HYBRIDQA_E2E = 9  # HybridQA RC using preds of HybridQA Cell Selection.
   HYBRIDQA = 6
   SEM_TAB_FACT = 10  # https://sites.google.com/corp/view/sem-tab-facts
+  MMQA = 11 #filtered from https://github.com/allenai/multimodalqa
+  MMQA_plus_YN = 12
+  MMQA_hop = 13
