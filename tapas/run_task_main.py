@@ -135,6 +135,12 @@ flags.DEFINE_bool(
 flags.DEFINE_boolean('use_document_title', False,
                      'Use table title to encode the input.')
 
+flags.DEFINE_boolean('use_question_type', False,
+                     'Use Gold Question Type for training')
+
+flags.DEFINE_boolean('use_hop_number', False,
+                     'Use Gold Hop Number for training')
+
 flags.DEFINE_boolean('update_answer_coordinates', False,
                      'Re-computes answer coordinates from the answer text.')
 
@@ -284,9 +290,9 @@ def _create_examples(
         max_row_id=_MAX_TABLE_ID,
         strip_column_names=False,
         add_aggregation_candidates=False,
-        is_multi_hop=True,
+        is_multi_hop=FLAGS.use_hop_number,
         use_bridge_entity=True,
-        use_question_type=True
+        use_question_type=FLAGS.use_question_type
     )
   else:
     config = tf_example_utils.ClassifierConversionConfig(
