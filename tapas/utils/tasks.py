@@ -33,3 +33,4 @@ class Task(enum.Enum):
   MMQA = 11 #filtered from https://github.com/allenai/multimodalqa
   MMQA_plus_YN = 12
   MMQA_hop = 13
+  MMQA_hop_add_seg = 14

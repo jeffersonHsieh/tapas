@@ -227,6 +227,11 @@ class BertModel(object):
             extra_embeddings=extra_embeddings,
             dropout_prob=config.hidden_dropout_prob)
 
+      # import pdb;pdb.set_trace()
+      # can get the created variables in pdb with: interact;
+      # with tf.variable_scope('embeddings', reuse=True):
+      #   tf.get_variable("token_type_embeddings_0") 
+      
       with tf.variable_scope("encoder"):
         # This converts a 2D mask of shape [batch_size, seq_length] to a 3D
         # mask of shape [batch_size, seq_length, seq_length] which is used
@@ -368,9 +373,11 @@ def get_assignment_map_from_checkpoint(tvars, init_checkpoint, scope=None):
   for var in tvars:
     name = var.name
     m = re.match("^(.*):\\d+$", name)
+    # import pdb;pdb.set_trace()
     if m is not None:
       name = m.group(1)
     name_to_variable[name] = var
+    # import pdb;pdb.set_trace()
 
   init_vars = tf.train.list_variables(init_checkpoint)
 
@@ -385,6 +392,7 @@ def get_assignment_map_from_checkpoint(tvars, init_checkpoint, scope=None):
     assignment_map[short_name] = name_to_variable[name]
     initialized_variable_names[name] = 1
     initialized_variable_names[name + ":0"] = 1
+    # about the ":0" in variable names: first output of the node https://stackoverflow.com/questions/40925652/in-tensorflow-whats-the-meaning-of-0-in-a-variables-name
 
   return (assignment_map, initialized_variable_names)
 
@@ -575,12 +583,26 @@ def embedding_postprocessor(input_tensor,
       token_type_table = tf.get_variable(
           name="%s_%d" % (token_type_embedding_name, i),
           shape=[type_vocab_size, width],
-          initializer=create_initializer(initializer_range))
+          initializer=create_initializer(initializer_range)) #creates a tensorflow variable
       # This vocab will be small so we always do one-hot here, since it is
       # always faster for a small vocabulary.
+      
+      # if i==0:
+        # print(token_type_table)
+        # tf.Print(token_type_table,token_type_table)
+        # type_ids = tf.Print(type_ids,[type_ids], summarize=200)
       flat_token_type_ids = tf.reshape(type_ids, [-1])
+      # if i==0:
+      #   import pdb;pdb.set_trace()
+      #   type_vocab_size = tf.unique(flat_token_type_ids)[0].shape[0]
+      #   print(type_vocab_size)
       one_hot_ids = tf.one_hot(flat_token_type_ids, depth=type_vocab_size)
+      # if i==0:
+      #   # import pdb;pdb.set_trace()
+      #   one_hot_ids = tf.Print(one_hot_ids,[one_hot_ids], summarize=50*3)
       token_type_embeddings = tf.matmul(one_hot_ids, token_type_table)
+      # if i==0:
+      #   token_type_embeddings = tf.Print(token_type_embeddings,[token_type_embeddings], summarize=200)
       token_type_embeddings = tf.reshape(token_type_embeddings,
                                          [batch_size, seq_length, width])
       output += token_type_embeddings
