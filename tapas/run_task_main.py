@@ -150,8 +150,8 @@ flags.DEFINE_boolean(
     'length.')
 
 flags.DEFINE_boolean(
-    'is_mmqa_inference', False,
-    'Whether to use the MMQA inference pipeline.'
+  'increment_bridge_entity_segment_id',False,
+  'Increment bridge entity segment id by 1 for every new entity'
 )
 
 flags.DEFINE_string('table_pruning_config_file', None,
@@ -243,7 +243,7 @@ def _create_all_examples(
                    task_utils.get_dev_filename(task), test_batch_size,
                    test_mode,task=task)
 
-  if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop]:
+  if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg]:
     print('skipping test set for MMQA')
 
   else:
@@ -294,6 +294,24 @@ def _create_examples(
         use_bridge_entity=True,
         use_question_type=FLAGS.use_question_type
     )
+  
+  elif task == tasks.Task.MMQA_hop_add_seg:
+    config = tf_example_utils.ClassifierConversionConfig(
+        vocab_file=vocab_file,
+        max_seq_length=FLAGS.max_seq_length,
+        use_document_title=FLAGS.use_document_title,
+        update_answer_coordinates=FLAGS.update_answer_coordinates,
+        drop_rows_to_fit=FLAGS.drop_rows_to_fit,
+        max_column_id=_MAX_TABLE_ID,
+        max_row_id=_MAX_TABLE_ID,
+        strip_column_names=False,
+        add_aggregation_candidates=False,
+        is_multi_hop=True,
+        use_bridge_entity=True,
+        use_question_type=True,
+        increment_bridge_entity_segment_id= FLAGS.increment_bridge_entity_segment_id
+    )
+
   else:
     config = tf_example_utils.ClassifierConversionConfig(
         vocab_file=vocab_file,
@@ -310,8 +328,11 @@ def _create_examples(
         use_question_type=False
     )
 
-  converter = tf_example_utils.ToClassifierTensorflowExample(config)
-
+  if task == tasks.Task.MMQA_hop_add_seg:
+    converter = tf_example_utils.ToMultihopClassifierTensorflowExample(config)
+  else:
+    converter = tf_example_utils.ToClassifierTensorflowExample(config)
+  # import pdb;pdb.set_trace()
   examples = []
   num_questions = 0
   num_conversion_errors = 0
@@ -450,7 +471,7 @@ def _train_and_predict(
     num_aggregation_labels = 4
     num_classification_labels = 0
     use_answer_as_supervision = task != tasks.Task.WIKISQL_SUPERVISED
-  elif task in [tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop]:
+  elif task in [tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg]:
     num_aggregation_labels = 4
     num_classification_labels = 3
     use_answer_as_supervision = task != tasks.Task.WIKISQL_SUPERVISED
@@ -654,11 +675,8 @@ def _predict(
 ):
   """Writes predictions for dev and test."""
   for test_set in TestSet:
-    if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop] and test_set == TestSet.TEST and not FLAGS.is_mmqa_inference:
+    if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg] and test_set == TestSet.TEST:
       _print('Skipping test set for MMQA.')
-      continue
-    if task in [tasks.Task.MMQA_hop] and test_set in [TestSet.DEV, TestSet.TRAIN] and FLAGS.is_mmqa_inference:
-      _print('Skipping Dev and Train Set for MMQA hop inference.')
       continue
     _predict_for_set(
         estimator,
@@ -792,7 +810,7 @@ def _eval(
 ):
   """Evaluate dev and test predictions."""
   for test_set in TestSet:
-    if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop] \
+    if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg] \
       and test_set == TestSet.TEST:
       _print('Skipping test set for MMQA.')
       continue
@@ -849,7 +867,7 @@ def _eval_for_set(
     return
   test_examples = calc_metrics_utils.read_data_examples_from_interactions(
       interaction_file)
-  if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop]:
+  if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg]:
     calc_metrics_utils.read_mmqa_predictions(
       predictions_path=prediction_file,
       examples=test_examples,
@@ -885,7 +903,7 @@ def _eval_for_set(
           model_dir=model_dir,
           name=name,
       )
-  elif task in [tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop]:
+  elif task in [tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg]:
     denotation_accuracy = calc_metrics_utils.calc_denotation_accuracy_mmqa(
         examples=test_examples,
         denotation_errors_path=model_dir, #debug
@@ -973,7 +991,8 @@ def main(argv):
     if task != tasks.Task.NQ_RETRIEVAL and task not in [
       tasks.Task.MMQA, 
       tasks.Task.MMQA_plus_YN,
-      tasks.Task.MMQA_hop]:
+      tasks.Task.MMQA_hop,
+      tasks.Task.MMQA_hop_add_seg]:
       _print('Creating interactions ...')
       #import time;time.sleep(5)
       token_selector = _get_token_selector()

@@ -982,6 +982,7 @@ def model_fn_builder(
         if do_model_classification else None)
 
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
+    # import pdb;pdb.set_trace()
     model = table_bert.create_model(
         features=features,
         mode=mode,
@@ -1067,7 +1068,11 @@ def model_fn_builder(
         scaffold_fn = tpu_scaffold
       else:
         for init_checkpoint, assignment_map in init_from_checkpoints:
-          tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
+          # import pdb;pdb.set_trace()
+          # print(assignment_map['bert/embeddings/token_type_embeddings_0']) # expected size of segment embeddings => TODO: how do we copy/initialize the sizes that don't match
+          # print(assignment_map['bert/embeddings/token_type_embeddings_1']) # expected size column embeddings
+          # print(assignment_map['bert/embeddings/token_type_embeddings_2']) # expected size of row embeddings
+          tf.train.init_from_checkpoint(init_checkpoint, assignment_map) # error happens here when fcn try to assign (3,1024) tensor to the expected (5,1024)
 
     fail_if_missing = init_from_checkpoints and params.get(
         "fail_if_missing_variables_in_checkpoint", False)

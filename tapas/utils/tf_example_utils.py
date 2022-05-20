@@ -158,6 +158,8 @@ class ClassifierConversionConfig(TrimmedConversionConfig):
   # self._use_bridge_entity = config.use_bridge_entity
   use_question_type: bool = False
   # self._use_question_type = config.use_question_type
+  increment_bridge_entity_segment_id: bool = False
+
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1268,7 +1270,7 @@ class ToClassifierTensorflowExample(ToTrimmedTensorflowExample):
 
     question_tokens = self._tokenizer.tokenize(question.text)
     text_tokens.extend(list(question_tokens))
-    #import pdb;pdb.set_trace()
+
     if self._use_document_title and table.document_title:
       # TODO(thomasmueller) Consider adding a different segment id.
       document_title_tokens = self._tokenizer.tokenize(table.document_title)
@@ -1336,6 +1338,414 @@ class ToClassifierTensorflowExample(ToTrimmedTensorflowExample):
         num_columns=num_columns,
         num_rows=num_rows,
         drop_rows_to_fit=self._drop_rows_to_fit)
+
+    column_ids = serialized_example.column_ids
+    row_ids = serialized_example.row_ids
+
+    def get_answer_ids(question):
+      if self._update_answer_coordinates:
+        return _find_answer_ids_from_answer_texts(
+            column_ids,
+            row_ids,
+            tokenized_table,
+            answer_texts=[
+                self._tokenizer.tokenize(at)
+                for at in question.answer.answer_texts
+            ],
+        )
+      return _get_answer_ids(column_ids, row_ids, question)
+
+    answer_ids = get_answer_ids(question)
+    self._pad_to_seq_length(answer_ids)
+    features['label_ids'] = create_int_feature(answer_ids)
+
+    if index > 0:
+      prev_answer_ids = get_answer_ids(interaction.questions[index - 1],)
+    else:
+      prev_answer_ids = [0] * len(column_ids)
+    self._pad_to_seq_length(prev_answer_ids)
+    features['prev_label_ids'] = create_int_feature(prev_answer_ids)
+    features['question_id'] = create_string_feature(
+        [question.id.encode('utf8')])
+    if self._trim_question_ids:
+      question_id = question.id[-text_utils.DEFAULT_INTS_LENGTH:]
+    else:
+      question_id = question.id
+    features['question_id_ints'] = create_int_feature(
+        text_utils.str_to_ints(
+            question_id, length=text_utils.DEFAULT_INTS_LENGTH))
+    features['aggregation_function_id'] = create_int_feature(
+        [question.answer.aggregation_function])
+    features['classification_class_index'] = create_int_feature(
+        [question.answer.class_index])
+
+    answer = question.answer.float_value if question.answer.HasField(
+        'float_value') else _NAN
+    features['answer'] = create_float_feature([answer])
+
+    if self._add_aggregation_candidates:
+      rng = random.Random(fingerprint(question.id))
+
+      candidates = interpretation_utils.find_candidates(rng, table, question)
+      num_initial_candidates = len(candidates)
+
+      candidates = [c for c in candidates if len(c.rows) < _MAX_NUM_ROWS]
+      candidates = candidates[:_MAX_NUM_CANDIDATES]
+
+      funs = [0] * _MAX_NUM_CANDIDATES
+      sizes = [0] * _MAX_NUM_CANDIDATES
+      indexes = []
+
+      num_final_candidates = 0
+      for index, candidate in enumerate(candidates):
+        token_indexes = []
+        for row in candidate.rows:
+          token_indexes += _get_cell_token_indexes(column_ids, row_ids,
+                                                   candidate.column, row)
+        if len(indexes) + len(serialized_example.tokens) > _MAX_INDEX_LENGTH:
+          break
+        num_final_candidates += 1
+        sizes[index] = len(token_indexes)
+        funs[index] = candidate.agg_function
+        indexes += token_indexes
+
+      # <int>[1]
+      features['cand_num'] = create_int_feature([num_final_candidates])
+      # <int>[_MAX_NUM_CANDIDATES]
+      features['can_aggregation_function_ids'] = create_int_feature(funs)
+      # <int>[_MAX_NUM_CANDIDATES]
+      features['can_sizes'] = create_int_feature(sizes)
+      # <int>[_MAX_INDEX_LENGTH]
+      # Actual length is sum(sizes).
+      features['can_indexes'] = create_int_feature(indexes)
+
+      if num_initial_candidates > 0:
+        beam_metrics.Metrics.counter(
+            _NS,
+            _get_buckets(num_initial_candidates,
+                         [10, 20, 50, 100, 200, 500, 1000, 1200, 1500],
+                         'Candidates Size:')).inc()
+
+        beam_metrics.Metrics.counter(_NS, 'Candidates: Input').inc()
+        if num_final_candidates != num_initial_candidates:
+          beam_metrics.Metrics.counter(_NS,
+                                       'Candidates: Dropped candidates').inc()
+
+    return tf.train.Example(features=tf.train.Features(feature=features))
+
+  def get_empty_example(self):
+    interaction = interaction_pb2.Interaction(questions=[
+        interaction_pb2.Question(id=text_utils.get_padded_question_id())
+    ])
+    return self.convert(interaction, index=0)
+
+
+
+
+
+class ToMultihopClassifierTensorflowExample(ToTrimmedTensorflowExample):
+  """Class for converting finetuning examples."""
+
+  def __init__(self, config):
+    super(ToMultihopClassifierTensorflowExample, self).__init__(config)
+    self._add_aggregation_candidates = config.add_aggregation_candidates
+    self._use_document_title = config.use_document_title
+    self._use_context_title = config.use_context_title
+    self._update_answer_coordinates = config.update_answer_coordinates
+    self._drop_rows_to_fit = config.drop_rows_to_fit
+    self._trim_question_ids = config.trim_question_ids
+    self._expand_entity_descriptions = config.expand_entity_descriptions
+    self._use_entity_title = config.use_entity_title
+    self._entity_descriptions_sentence_limit = config.entity_descriptions_sentence_limit
+    
+    # TODO (Chia-Chun)
+    self._is_multi_hop = config.is_multi_hop
+    self._use_bridge_entity = config.use_bridge_entity
+    self._use_question_type = config.use_question_type
+    self._increment_bridge_entity_segment_id = config.increment_bridge_entity_segment_id
+  
+  def _serialize_text(
+      self, question_tokens
+  ):
+    """Serialzes texts in index arrays."""
+    tokens = []
+    segment_ids = []
+    column_ids = []
+    row_ids = []
+
+    tokens.append(Token(_CLS, _CLS))
+    segment_ids.append(0)
+    column_ids.append(0)
+    row_ids.append(0)
+
+    for token in question_tokens:
+      tokens.append(token)
+      segment_ids.append(0)
+      column_ids.append(0)
+      row_ids.append(0)
+
+    return tokens, segment_ids, column_ids, row_ids
+
+  def _serialize(
+      self,
+      question_tokens,
+      question_type_tokens,
+      hop_tokens,
+      bridge_entity_tokens_list,
+      table,
+      num_columns,
+      num_rows,
+      num_tokens,
+  ):
+    """Serializes table and text."""
+    tokens, segment_ids, column_ids, row_ids = self._serialize_text(
+        question_tokens)
+
+    tokens.append(Token(_SEP, _SEP))
+    segment_ids.append(0)
+    column_ids.append(0)
+    row_ids.append(0)
+
+    for token in question_type_tokens:
+      tokens.append(token)
+      segment_ids.append(2)
+      column_ids.append(0)
+      row_ids.append(0)
+
+    tokens.append(Token(_SEP, _SEP))
+    segment_ids.append(2)
+    column_ids.append(0)
+    row_ids.append(0)
+
+    for token in hop_tokens:
+      tokens.append(token)
+      segment_ids.append(3)
+      column_ids.append(0)
+      row_ids.append(0)
+    
+    tokens.append(Token(_SEP, _SEP))
+    segment_ids.append(3)
+    column_ids.append(0)
+    row_ids.append(0)
+
+  
+    bridge_segment_id_start=4
+    for bridge_entity_tokens in bridge_entity_tokens_list:
+      for token in bridge_entity_tokens:
+        tokens.append(token)
+        segment_ids.append(bridge_segment_id_start)
+        column_ids.append(0)
+        row_ids.append(0)
+      tokens.append(Token(_SEP, _SEP))
+      segment_ids.append(bridge_segment_id_start)
+      column_ids.append(0)
+      row_ids.append(0)
+      if self._increment_bridge_entity_segment_id:
+        bridge_segment_id_start+=1
+    
+    if len(bridge_entity_tokens_list)==0:
+      tokens.append(Token(_EMPTY, _EMPTY))
+      column_ids.append(0)
+      row_ids.append(0)
+      segment_ids.append(bridge_segment_id_start)
+      tokens.append(Token(_SEP, _SEP))
+      segment_ids.append(bridge_segment_id_start)
+      column_ids.append(0)
+      row_ids.append(0)
+
+
+    for token, column_id, row_id in self._get_table_values(
+        table, num_columns, num_rows, num_tokens):
+      tokens.append(token)
+      segment_ids.append(1)
+      column_ids.append(column_id)
+      row_ids.append(row_id)
+
+    return SerializedExample(
+        tokens=tokens,
+        segment_ids=segment_ids,
+        column_ids=column_ids,
+        row_ids=row_ids,
+    )
+
+  def _add_qtype_info_to_question_tokens(
+    self,question_tokens,
+    question_type_tokens, hop_tokens,bridge_entity_tokens_list):
+    text_tokens = list(question_tokens)
+
+    text_tokens.append(Token(_SEP, _SEP))
+    text_tokens.extend(question_type_tokens)
+    
+    text_tokens.append(Token(_SEP, _SEP))
+    text_tokens.extend(hop_tokens)
+    
+      
+    for bridge_entity_tokens in bridge_entity_tokens_list:
+      text_tokens.append(Token(_SEP, _SEP))
+      text_tokens.extend(bridge_entity_tokens)
+    
+    if len(bridge_entity_tokens_list) == 0:
+      text_tokens.append(Token(_EMPTY, _EMPTY))
+      text_tokens.append(Token(_SEP, _SEP))
+
+    
+    return text_tokens
+
+  def _to_trimmed_features(
+      self,
+      question,
+      table,
+      question_tokens,
+      question_type_tokens,
+      hop_tokens,
+      bridge_entity_tokens_list,
+      tokenized_table,
+      num_columns,
+      num_rows,
+      drop_rows_to_fit = False,
+  ):
+    """Finds optiomal number of table tokens to include and serializes."""
+    init_num_rows = num_rows
+
+    # this is just used for calculating token budget
+    extended_question_tokens = self._add_qtype_info_to_question_tokens(question_tokens,question_type_tokens,hop_tokens,bridge_entity_tokens_list)
+
+    while True:
+      num_tokens = self._get_max_num_tokens(
+          extended_question_tokens,
+          tokenized_table,
+          num_rows=num_rows,
+          num_columns=num_columns,
+      )
+      if num_tokens is not None:
+        # We could fit the table.
+        break
+      if not drop_rows_to_fit or num_rows == 0:
+        raise ValueError('Sequence too long')
+      # Try to drop a row to fit the table.
+      num_rows -= 1
+    if init_num_rows != num_rows:
+      beam_metrics.Metrics.counter(_NS, 'Tables with trimmed rows').inc()
+    serialized_example = self._serialize(question_tokens, question_type_tokens, hop_tokens, 
+                                        bridge_entity_tokens_list,
+                                        tokenized_table,
+                                        num_columns, num_rows, num_tokens)
+
+    assert len(serialized_example.tokens) <= self._max_seq_length
+
+    # import pdb;pdb.set_trace()
+
+    feature_dict = {
+        'column_ids': serialized_example.column_ids,
+        'row_ids': serialized_example.row_ids,
+        'segment_ids': serialized_example.segment_ids,
+    }
+    #TODO (Chia-Chun): maybe add a new dimension of token type ids? independent of segment ids
+    
+    features = self._to_features(
+        serialized_example.tokens, feature_dict, table=table, question=question)
+    return serialized_example, features
+
+  def _tokenize_extended_question(
+      self,
+      question,
+      table,
+  ):
+    """Runs tokenizer over the question text and document title if it's used."""
+    # (Chia-Chun): removed adding qtype/hop info/bridge entities at this stage
+    
+    question_type_tokens, hop_tokens, bridge_entity_tokens_list = [],[],[[]]
+
+    if self._use_question_type:
+      question_type_tokens = self._tokenizer.tokenize(question.question_type)
+
+    if self._is_multi_hop:
+      hop_tokens = self._tokenizer.tokenize("Hop is " + str(question.hop))
+
+    if self._use_bridge_entity:
+      bridge_entity_tokens_list = []
+      for bridge_entity in question.bridge_entities:
+        bridge_entity_tokens = self._tokenizer.tokenize(bridge_entity)
+        bridge_entity_tokens_list.append(bridge_entity_tokens)
+
+    
+
+    text_tokens = []
+    question_tokens = self._tokenizer.tokenize(question.text)
+    text_tokens.extend(list(question_tokens))
+
+    if self._use_document_title and table.document_title:
+      # TODO(thomasmueller) Consider adding a different segment id.
+      document_title_tokens = self._tokenizer.tokenize(table.document_title)
+      text_tokens.append(Token(_SEP, _SEP))
+      text_tokens.extend(document_title_tokens)
+    context_heading = table.context_heading
+    if self._use_context_title and context_heading:
+      context_title_tokens = self._tokenizer.tokenize(context_heading)
+      text_tokens.append(Token(_SEP, _SEP))
+      text_tokens.extend(context_title_tokens)
+    
+
+
+
+    return text_tokens,question_type_tokens, hop_tokens, bridge_entity_tokens_list
+
+  def convert(self, interaction,
+              index):
+    """Converts question at 'index' to example."""
+    table = interaction.table
+
+    num_rows = self._get_num_rows(table, self._drop_rows_to_fit)
+    num_columns = self._get_num_columns(table)
+
+    question = interaction.questions[index]
+    #debug, disable here
+    if not interaction.questions[index].answer.is_valid:
+      beam_metrics.Metrics.counter(
+          _NS, 'Conversion skipped (answer not valid)').inc()
+      raise ValueError('Invalid answer')
+
+    annotation_descriptions_ext = (
+        annotated_text_pb2.AnnotationDescription.annotation_descriptions_ext)
+    if (self._expand_entity_descriptions and
+        annotation_descriptions_ext in interaction.Extensions):
+      descriptions = interaction.Extensions[
+          annotation_descriptions_ext].descriptions
+      _add_entity_descriptions_to_table(
+          question,
+          descriptions,
+          table,
+          use_entity_title=self._use_entity_title,
+          num_results=self._entity_descriptions_sentence_limit)
+
+    text_tokens,question_type_tokens,hop_tokens, bridge_entity_list_tokens = self._tokenize_extended_question(question, table)
+    tokenized_table = self._tokenize_table(table)
+    table_selection_ext = table_selection_pb2.TableSelection.table_selection_ext
+    if table_selection_ext in question.Extensions:
+      table_selection = question.Extensions[table_selection_ext]
+      if not tokenized_table.selected_tokens:
+        raise ValueError('No tokens selected')
+      if table_selection.selected_tokens:
+        selected_tokens = {(t.row_index, t.column_index, t.token_index)
+                           for t in table_selection.selected_tokens}
+        tokenized_table.selected_tokens = [
+            t for t in tokenized_table.selected_tokens
+            if (t.row_index, t.column_index, t.token_index) in selected_tokens
+        ]
+
+    serialized_example, features = self._to_trimmed_features(
+        question=question,
+        table=table,
+        question_tokens=text_tokens,
+        question_type_tokens=question_type_tokens,
+        hop_tokens=hop_tokens,
+        bridge_entity_tokens_list=bridge_entity_list_tokens,
+        tokenized_table=tokenized_table,
+        num_columns=num_columns,
+        num_rows=num_rows,
+        drop_rows_to_fit=self._drop_rows_to_fit)
+
+    # import pdb;pdb.set_trace()
 
     column_ids = serialized_example.column_ids
     row_ids = serialized_example.row_ids
