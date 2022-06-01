@@ -622,8 +622,17 @@ def embedding_postprocessor(input_tensor,
         # type_ids = tf.Print(type_ids,[type_ids], summarize=200)
 
       flat_token_type_ids = tf.reshape(type_ids, [-1])
+      # if i==0:
+      #   import pdb;pdb.set_trace()
+      #   type_vocab_size = tf.unique(flat_token_type_ids)[0].shape[0]
+      #   print(type_vocab_size)
       one_hot_ids = tf.one_hot(flat_token_type_ids, depth=type_vocab_size)
+      # if i==0:
+      #   # import pdb;pdb.set_trace()
+      #   one_hot_ids = tf.Print(one_hot_ids,[one_hot_ids], summarize=50*3)
       token_type_embeddings = tf.matmul(one_hot_ids, token_type_table)
+      # if i==0:
+      #   token_type_embeddings = tf.Print(token_type_embeddings,[token_type_embeddings], summarize=200)
       token_type_embeddings = tf.reshape(token_type_embeddings,
                                          [batch_size, seq_length, width])
       output += token_type_embeddings
