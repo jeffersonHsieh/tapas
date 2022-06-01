@@ -551,7 +551,9 @@ def _train_and_predict(
       disable_position_embeddings=False,
       reset_output_cls=FLAGS.reset_output_cls,
       reset_position_index_per_cell=FLAGS.reset_position_index_per_cell,
-      table_pruning_config_file=FLAGS.table_pruning_config_file)
+      table_pruning_config_file=FLAGS.table_pruning_config_file,
+      load_custom_segment_vocab_size = task==tasks.Task.MMQA_hop_add_seg
+      )
 
   model_fn = tapas_classifier_model.model_fn_builder(tapas_config)
 

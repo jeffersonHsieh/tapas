@@ -178,14 +178,14 @@ def get_hparams(task):
   
   elif task == tasks.Task.MMQA_hop_add_seg:
     params.update({
-        'num_train_examples': 200000 * 4,
+        'num_train_examples': 400000 * 4,
         'train_batch_size': 4,
         'answer_loss_cutoff': 0.664694,
         'cell_select_pref': 0.207951,
         'huber_loss_delta': 0.121194,
         'init_cell_selection_weights_to_zero': True,
         'num_classification_labels': 3,
-        'learning_rate': 0.00000193581, #second variable
+        'learning_rate': 0.0000193581, #MODIFIED (increased 10 times)
         'select_one_column': True,
         'allow_empty_column_selection': False,
         'temperature': 0.0352513,

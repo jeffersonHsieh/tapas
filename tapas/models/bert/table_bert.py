@@ -37,6 +37,8 @@ def create_model(
     disable_position_embeddings=False,
     reset_position_index_per_cell=False,
     proj_value_length=None,
+    init_checkpoint = None, #MODIFIED by Chia-Chun
+    load_custom_segment_vocab_size=False
 ):
   """Creates a TABLE BERT model."""
   is_training = (mode == tf.estimator.ModeKeys.TRAIN)
@@ -92,4 +94,6 @@ def create_model(
       use_position_embeddings=not disable_position_embeddings,
       reset_position_index_per_cell=reset_position_index_per_cell,
       proj_value_length=proj_value_length,
+      init_checkpoint = init_checkpoint, #MODIFIED by Chia-Chun
+      load_custom_segment_vocab_size = load_custom_segment_vocab_size #MODIFIED by Chia-Chun
   )

@@ -158,6 +158,8 @@ class TapasClassifierConfig:
   cell_cross_entropy: bool = False
   cell_cross_entropy_hard_em: bool = False
 
+  load_custom_segment_vocab_size: bool = False # CUSTOMIZED BY CHIA-CHUN
+
   def to_json_string(self):
     """Serializes this instance to a JSON string."""
 
@@ -997,6 +999,8 @@ def model_fn_builder(
         disable_position_embeddings=config.disable_position_embeddings,
         reset_position_index_per_cell=config.reset_position_index_per_cell,
         proj_value_length=config.proj_value_length,
+        init_checkpoint = config.init_checkpoint, #MODIFIED by Chia-Chun
+        load_custom_segment_vocab_size = config.load_custom_segment_vocab_size #MODIFIED by Chia-Chun
     )
 
     answer, numeric_values, numeric_values_scale = (
@@ -1070,14 +1074,22 @@ def model_fn_builder(
         for init_checkpoint, assignment_map in init_from_checkpoints:
           # import pdb;pdb.set_trace()
           # print(assignment_map['bert/embeddings/token_type_embeddings_0']) # expected size of segment embeddings => TODO: how do we copy/initialize the sizes that don't match
-          # print(assignment_map['bert/embeddings/token_type_embeddings_1']) # expected size column embeddings
-          # print(assignment_map['bert/embeddings/token_type_embeddings_2']) # expected size of row embeddings
+
+          # assignment_map.pop('bert/embeddings/token_type_embeddings_0', None)
+          # initialized_variable_names.remove('bert/embeddings/token_type_embeddings_0')
+          # initialized_variable_names.remove('bert/embeddings/token_type_embeddings_0:0')
+          # tf.logging.info("*****Warning: Removing token_type_embeddings_0 from init_checkpoint*****")
+          # import time;time.sleep(5)
           tf.train.init_from_checkpoint(init_checkpoint, assignment_map) # error happens here when fcn try to assign (3,1024) tensor to the expected (5,1024)
+
+
+
+          
 
     fail_if_missing = init_from_checkpoints and params.get(
         "fail_if_missing_variables_in_checkpoint", False)
     tf.logging.info("**** Trainable Variables ****")
-    for var in tvars:
+    for var in tvars[:20]:
       init_string = ""
       if var.name in initialized_variable_names:
         init_string = ", *INIT_FROM_CKPT*"
@@ -1086,7 +1098,7 @@ def model_fn_builder(
           tf.logging.fatal("Variable not found in checkpoint: %s", var.name)
       tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
                       init_string)
-
+    # import pdb;pdb.set_trace()
     output_spec = None
     if mode == tf.estimator.ModeKeys.TRAIN:
       train_op = optimization.create_optimizer(
@@ -1104,6 +1116,7 @@ def model_fn_builder(
           loss=total_loss,
           train_op=train_op,
           scaffold_fn=scaffold_fn)
+      # import pdb;pdb.set_trace()
     elif mode == tf.estimator.ModeKeys.EVAL:
       eval_metrics = (
           _calculate_eval_metrics_fn,

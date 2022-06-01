@@ -1639,6 +1639,7 @@ class ToMultihopClassifierTensorflowExample(ToTrimmedTensorflowExample):
         'column_ids': serialized_example.column_ids,
         'row_ids': serialized_example.row_ids,
         'segment_ids': serialized_example.segment_ids,
+        # reasoning_type_ids
     }
     #TODO (Chia-Chun): maybe add a new dimension of token type ids? independent of segment ids
     
@@ -1660,7 +1661,7 @@ class ToMultihopClassifierTensorflowExample(ToTrimmedTensorflowExample):
       question_type_tokens = self._tokenizer.tokenize(question.question_type)
 
     if self._is_multi_hop:
-      hop_tokens = self._tokenizer.tokenize("Hop is " + str(question.hop))
+      hop_tokens = self._tokenizer.tokenize(str(question.hop))
 
     if self._use_bridge_entity:
       bridge_entity_tokens_list = []
