@@ -48,7 +48,7 @@ def main(argv):
         FLAGS.prediction_files_global,
         make_tables_unique=True,
         retrieval_results_file_path=FLAGS.retrieval_results_file_path,
-        thresholds=[1,10,100,500,1000,5000,10000,20000,50000])
+        thresholds=[1,10,50,100])
   else:
     eval_table_retriever_utils.eval_precision_at_k(
         FLAGS.prediction_files_local,

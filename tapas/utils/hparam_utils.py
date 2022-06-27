@@ -190,7 +190,20 @@ def get_hparams(task):
         'allow_empty_column_selection': False,
         'temperature': 0.0352513,
         'warmup_ratio': 0.128960,
-    })  
+    })
+  
+  elif task == tasks.Task.MMQA_hop_supervised:
+    params.update({
+        'answer_loss_cutoff': 36.4519,
+        'cell_select_pref': 0.903421,
+        'huber_loss_delta': 222.088,
+        'init_cell_selection_weights_to_zero': True,
+        'learning_rate': 0.0000412331,
+        'select_one_column': True,
+        'allow_empty_column_selection': True,
+        'temperature': 0.763141,
+        'warmup_ratio': 0.168479,
+    })
 
   else:
     raise ValueError(f'Unknown task: {task.name}')

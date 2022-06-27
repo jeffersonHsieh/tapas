@@ -81,6 +81,7 @@ def run(inputs, outputs, input_format):
 
 
 def main(_):
+
   inputs, outputs = create_data_file_io.get_inputs_and_outputs(
       FLAGS.input_interactions_dir, FLAGS.output_dir)
   if not inputs:

@@ -243,7 +243,7 @@ def _create_all_examples(
                    task_utils.get_dev_filename(task), test_batch_size,
                    test_mode,task=task)
 
-  if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg]:
+  if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg,tasks.Task.MMQA_hop_supervised]:
     print('skipping test set for MMQA')
 
   else:
@@ -295,7 +295,7 @@ def _create_examples(
         use_question_type=FLAGS.use_question_type
     )
   
-  elif task == tasks.Task.MMQA_hop_add_seg:
+  elif task in [tasks.Task.MMQA_hop_add_seg,tasks.Task.MMQA_hop_supervised]:
     config = tf_example_utils.ClassifierConversionConfig(
         vocab_file=vocab_file,
         max_seq_length=FLAGS.max_seq_length,
@@ -328,7 +328,7 @@ def _create_examples(
         use_question_type=False
     )
 
-  if task == tasks.Task.MMQA_hop_add_seg:
+  if task in [tasks.Task.MMQA_hop_add_seg,tasks.Task.MMQA_hop_supervised]:
     converter = tf_example_utils.ToMultihopClassifierTensorflowExample(config)
   else:
     converter = tf_example_utils.ToClassifierTensorflowExample(config)
@@ -475,11 +475,15 @@ def _train_and_predict(
     num_aggregation_labels = 4
     num_classification_labels = 3
     use_answer_as_supervision = task != tasks.Task.WIKISQL_SUPERVISED
+  elif task in [tasks.Task.MMQA_hop_supervised]:
+    num_aggregation_labels = 4
+    num_classification_labels = 3
+    use_answer_as_supervision = False
   elif task == tasks.Task.TABFACT:
     num_classification_labels = 2
     num_aggregation_labels = 0
     use_answer_as_supervision = True
-  elif task == tasks.Task.NQ_RETRIEVAL:
+  elif task == tasks.Task.NQ_RETRIEVAL: #for nq reader (QA)
     num_aggregation_labels = 0
     num_classification_labels = 2
     use_answer_as_supervision = False
@@ -552,7 +556,7 @@ def _train_and_predict(
       reset_output_cls=FLAGS.reset_output_cls,
       reset_position_index_per_cell=FLAGS.reset_position_index_per_cell,
       table_pruning_config_file=FLAGS.table_pruning_config_file,
-      load_custom_segment_vocab_size = task==tasks.Task.MMQA_hop_add_seg
+      load_custom_segment_vocab_size = task in [tasks.Task.MMQA_hop_add_seg,tasks.Task.MMQA_hop_supervised],
       )
 
   model_fn = tapas_classifier_model.model_fn_builder(tapas_config)
@@ -677,7 +681,7 @@ def _predict(
 ):
   """Writes predictions for dev and test."""
   for test_set in TestSet:
-    if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg] and test_set == TestSet.TEST:
+    if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg, tasks.Task.MMQA_hop_supervised] and test_set == TestSet.TEST:
       _print('Skipping test set for MMQA.')
       continue
     _predict_for_set(
@@ -812,7 +816,7 @@ def _eval(
 ):
   """Evaluate dev and test predictions."""
   for test_set in TestSet:
-    if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg] \
+    if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg,tasks.Task.MMQA_hop_supervised] \
       and test_set == TestSet.TEST:
       _print('Skipping test set for MMQA.')
       continue
@@ -869,7 +873,7 @@ def _eval_for_set(
     return
   test_examples = calc_metrics_utils.read_data_examples_from_interactions(
       interaction_file)
-  if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg]:
+  if task in [tasks.Task.MMQA, tasks.Task.MMQA_plus_YN, tasks.Task.MMQA_hop, tasks.Task.MMQA_hop_add_seg,tasks.Task.MMQA_hop_supervised]:
     calc_metrics_utils.read_mmqa_predictions(
       predictions_path=prediction_file,
       examples=test_examples,
@@ -994,7 +998,8 @@ def main(argv):
       tasks.Task.MMQA, 
       tasks.Task.MMQA_plus_YN,
       tasks.Task.MMQA_hop,
-      tasks.Task.MMQA_hop_add_seg]:
+      tasks.Task.MMQA_hop_add_seg,
+      tasks.Task.MMQA_hop_supervised]:
       _print('Creating interactions ...')
       #import time;time.sleep(5)
       token_selector = _get_token_selector()

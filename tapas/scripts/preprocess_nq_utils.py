@@ -734,8 +734,11 @@ def write_interactions_to_files(
 def get_version(table):
   query = urllib.parse.urlparse(html.unescape(table.document_url)).query
   parsed_query = urllib.parse.parse_qs(query)
-  values = parsed_query["oldid"]
-  value = values[0]
+  try:
+    values = parsed_query["oldid"]
+    value = values[0]
+  except:
+    value = '8665308530' # max version id in nq_tables*10
   return int(value)
 
 
