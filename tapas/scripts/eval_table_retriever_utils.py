@@ -29,7 +29,7 @@ import dataclasses
 import numpy as np
 import tensorflow.compat.v1 as tf
 
-_NUM_NEIGHBORS = 10000
+_NUM_NEIGHBORS = 100
 
 
 class InnerProductNearestNeighbors:
